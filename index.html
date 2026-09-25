@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#b4552b">
+<title>אור בגג</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="login" class="screen" hidden>
+    <div class="login-box">
+      <div class="brand">אור בגג</div>
+      <div class="dim">התחברות — אותו אימייל וסיסמה כמו באפליקציה הישנה</div>
+      <input id="li-email" type="email" inputmode="email" dir="ltr" placeholder="אימייל" autocomplete="username">
+      <input id="li-pass" type="password" dir="ltr" placeholder="סיסמה" autocomplete="current-password">
+      <button class="btn pri" id="li-go">התחבר</button>
+      <div id="li-msg" class="dim"></div>
+    </div>
+  </div>
+
+  <header id="top" hidden>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="חיפוש לקוח, טלפון, כתובת" autocomplete="off">
+    </div>
+    <div id="netdot" title="מצב חיבור"></div>
+  </header>
+
+  <main id="views" hidden>
+    <section id="v-customers" class="view">
+      <div class="list" id="cust-list"></div>
+    </section>
+    <section id="v-customer" class="view" hidden></section>
+    <section id="v-job" class="view" hidden></section>
+    <section id="v-money" class="view" hidden></section>
+    <section id="v-more" class="view" hidden></section>
+  </main>
+
+  <nav id="tabs" hidden>
+    <button data-tab="customers" class="on"><span class="ico">👥</span>לקוחות</button>
+    <button data-tab="work"><span class="ico">🏠</span>עבודות</button>
+    <button id="plus" aria-label="חדש">+</button>
+    <button data-tab="money"><span class="ico">₪</span>כסף</button>
+    <button data-tab="more"><span class="ico">⋯</span>עוד</button>
+  </nav>
+  <div id="toast" hidden></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
