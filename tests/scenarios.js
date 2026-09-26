@@ -219,6 +219,19 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.click('[data-act="cal-next"]'); ok('C3: next week has no task', !(await p.locator('#v-calendar').textContent()).includes(TK));
   await p.click('#v-calendar [data-back]'); await p.waitForSelector('#v-customers:not([hidden])');
   await p.click(`#cust-list .row[data-task]:has-text("${TK}") [data-task-done]`); await p.waitForFunction((tk) => !document.querySelector('#cust-list').textContent.includes(tk), TK, { timeout: 5000 }).catch(() => {}); ok('C2: task done disappears', !(await p.locator('#cust-list').textContent()).includes(TK));
+  // רגרסיה (ביקורת גל א'): שני מכשירים מוסיפים ממצא לאותה עבודה בלי רענון — שניהם נשארים; מחיר שלילי נחסם; לחיצה כפולה = הצעה אחת
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
+  const jid2 = await p.evaluate(() => S.params.id);
+  const ctxR = await b.newContext({ viewport: { width: 1200, height: 800 } }); const pR = await login(ctxR); await pR.evaluate((id) => show('job', { id }), jid2); await pR.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('[data-act="new-finding"]'); await p.fill('#fi-title', 'ממצא A'); await p.click('#fi-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' }); await settle(p);
+  await pR.click("[data-act=\"new-finding\"]"); await pR.fill("#fi-title", "ממצא B"); await pR.click("#fi-save"); await pR.waitForSelector("#sheet-wrap", { state: "detached" }); await settle(pR);
+  await pR.evaluate(() => DB.loadAll().then(render)); const both = await pR.locator('#v-job').textContent();
+  ok('R: concurrent findings from two devices both kept', both.includes('ממצא A') && both.includes('ממצא B'));
+  await ctxR.close();
+  await p.click('[data-act="new-finding"]'); await p.fill('#fi-title', 'שלילי'); await p.fill('#fi-ppu', '-100'); await p.click('#fi-save'); await p.waitForTimeout(300);
+  ok('R: negative price rejected', (await p.locator('#sheet-wrap').count()) === 1); await p.click('#sheet-wrap [data-close]');
+  const before = await p.evaluate(() => D.quotes.length); await p.click('[data-act="new-quote"]', { clickCount: 2 }).catch(() => {}); await p.waitForSelector('#v-quote:not([hidden]) #q-items'); await settle(p);
+  ok('R: double click creates one quote', (await p.evaluate(() => D.quotes.length)) === before + 1);
   await settle(p);
 
   await ctx.close(); await b.close();

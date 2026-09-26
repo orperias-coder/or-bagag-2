@@ -15,7 +15,7 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], settings: null, uid: null, loadedAt: 0 };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], settings: null, uid: null, loadedAt: 0 };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
@@ -25,6 +25,7 @@ const quotesOf = (jid) => live(D.quotes).filter((q) => q.job_id === jid).sort((a
 const paymentsOf = (jid) => live(D.payments).filter((p) => p.job_id === jid);
 const mediaOf = (jid) => live(D.media).filter((m) => m.job_id === jid);
 const custOf = (id) => D.customers.find((c) => c.id === id);
+const findingsOf = (jid) => live(D.findings).filter((f) => f.job_id === jid).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
 // ---------- ניווט ----------
 const S = { view: 'today', stack: [], tab: 'today', q: '' };
@@ -117,7 +118,7 @@ function renderWork() {
   const wHtml = waiting.length ? `<div class="section">מחכות לתשובה · ${waiting.length}</div>` + waiting.map((j) => { const c = custOf(j.customer_id) || {}; const d = daysSince(j.quote_sent_at);
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || '')}${d >= 7 ? ' · <b style="color:var(--red)">תזכורת אחרונה</b>' : ''}</div></div><span class="chip days ${d >= 7 ? 'last' : ''}">${d} ימים</span>${c.phone ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}" onclick="event.stopPropagation()">וואטסאפ</a>` : ''}</div>`; }).join('') : '';
   const needQuote = open.filter((j) => j.stage === 'visit' && j.visit_at && (Date.now() - new Date(j.visit_at)) > 864e5 && !quotesOf(j.id).length);
-  const nqHtml = needQuote.length ? `<div class="section">ממתינות להצעה · ${needQuote.length}</div>` + needQuote.map((j) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">ביקור ${dateHe(j.visit_at)} · ${(j.findings || []).length} ממצאים</div></div><span class="chip days">${daysSince(j.visit_at)} ימים</span></div>`; }).join('') : '';
+  const nqHtml = needQuote.length ? `<div class="section">ממתינות להצעה · ${needQuote.length}</div>` + needQuote.map((j) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">ביקור ${dateHe(j.visit_at)} · ${findingsOf(j.id).length} ממצאים</div></div><span class="chip days">${daysSince(j.visit_at)} ימים</span></div>`; }).join('') : '';
   const rest = open.filter((j) => !waiting.includes(j) && !needQuote.includes(j));
   const groups = STAGES.filter((s) => s !== 'paid').map((s) => [s, rest.filter((j) => j.stage === s)]).filter(([, a]) => a.length);
   $('#cust-list').innerHTML = wHtml + nqHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
@@ -155,7 +156,7 @@ function renderJob() {
   <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${roofLine(c) ? `<span>גג: ${roofLine(c)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
   ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><button class="btn sm" data-act="voice" id="voice-btn">הקלטה</button></div><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
-  <div class="section">ממצאים מהגג · ${(j.findings || []).length}</div><div class="card">${(j.findings || []).map((f, n) => { const m = f.media_id && D.media.find((x) => x.id === f.media_id); return `<div class="qitem" data-finding="${n}" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:center;min-width:0">${m && m.thumb_data ? `<img src="${m.thumb_data}" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">` : ''}<div><div class="t">${esc(f.title)}</div><div class="dim">${f.qty} ${esc(f.unit || '')}${f.price_per_unit ? ' × ' + money(f.price_per_unit) : ''}</div></div></div><b>${f.price_per_unit ? money(f.qty * f.price_per_unit) : ''}</b></div>`; }).join('') || '<div class="dim">על הגג: כל ממצא עם תמונה וכמות, וההצעה בערב כבר מלאה.</div>'}<div class="actions"><button class="btn sm pri" data-act="new-finding">ממצא חדש</button>${(j.findings || []).length ? '<button class="btn sm ghost" data-act="clear-findings">נקה ממצאים</button>' : ''}</div></div>
+  <div class="section">ממצאים מהגג · ${findingsOf(j.id).length}</div><div class="card">${findingsOf(j.id).map((f) => { const m = f.media_id && D.media.find((x) => x.id === f.media_id); return `<div class="qitem" data-finding="${f.id}" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:center;min-width:0">${m && m.thumb_data ? `<img src="${m.thumb_data}" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">` : ''}<div><div class="t">${esc(f.title)}</div><div class="dim">${f.qty} ${esc(f.unit || '')}${f.price_per_unit ? ' × ' + money(f.price_per_unit) : ''}</div></div></div><b>${f.price_per_unit ? money(f.qty * f.price_per_unit) : ''}</b></div>`; }).join('') || '<div class="dim">על הגג: כל ממצא עם תמונה וכמות, וההצעה בערב כבר מלאה.</div>'}<div class="actions"><button class="btn sm pri" data-act="new-finding">ממצא חדש</button>${findingsOf(j.id).length ? '<button class="btn sm ghost" data-act="clear-findings">נקה ממצאים</button>' : ''}</div></div>
   <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
   ${(j.price_agreed || ps.length || ['approved', 'doing', 'paid'].includes(j.stage)) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-inv="${p.id}">הוצאתי חשבונית</button>`}</span><b>${money(p.amount)}</b></div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="add-payment">רשום תשלום</button></div></div>` : ''}
   </div><div>
@@ -214,8 +215,8 @@ function openPaymentForm(job) {
     render();
   };
 }
-function openFindingForm(job, idx) {
-  const list = [...(job.findings || [])]; const f = idx != null ? { ...list[idx] } : { id: DB.uuid(), title: '', description: '', qty: 1, unit: '', price_per_unit: '', media_id: null, catalog_id: null, at: new Date().toISOString() };
+function openFindingForm(job, fid) {   // כל ממצא = שורה משלו בענן (תיקון: שני מכשירים לא דורסים זה את זה)
+  const f = fid ? { ...(D.findings.find((x) => x.id === fid) || {}) } : { title: '', description: '', qty: 1, unit: '', price_per_unit: '', media_id: null, catalog_id: null };
   const w = sheet('t-finding-form'); $('#fi-title', w).value = f.title; $('#fi-desc', w).value = f.description || ''; $('#fi-qty', w).value = f.qty; $('#fi-unit', w).value = f.unit || ''; $('#fi-ppu', w).value = f.price_per_unit || '';
   const m = f.media_id && D.media.find((x) => x.id === f.media_id); if (m && m.thumb_data) { $('#fi-thumb', w).dataset.media = m.id; $('#fi-thumb', w).innerHTML = `<img src="${m.thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; }
   $('#fi-photo', w).onclick = () => { const inp = $('#photo-in'); inp.dataset.forJob = job.id; inp.dataset.forCust = job.customer_id; inp.dataset.forTag = 'roof'; inp.dataset.forFinding = '1'; inp.removeAttribute('multiple'); inp.click(); setTimeout(() => inp.setAttribute('multiple', ''), 500); };
@@ -223,12 +224,11 @@ function openFindingForm(job, idx) {
     const draw = (q) => { cl.innerHTML = cat.filter((c) => !q || (c.name || '').includes(q)).slice(0, 60).map((c) => `<div class="row" data-cat="${cat.indexOf(c)}"><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${money(c.price)}${c.unit ? ' / ' + esc(c.unit) : ''}</div></div></div>`).join(''); };
     draw(''); $('#cat-search', cw).oninput = (e) => draw(e.target.value.trim());
     cl.onclick = (e) => { const r = e.target.closest('[data-cat]'); if (!r) return; const c = cat[+r.dataset.cat]; f.catalog_id = c.legacy_id || null; const w2 = openFindingForm.reopen(); $('#fi-title', w2).value = c.name; $('#fi-desc', w2).value = c.description || ''; $('#fi-unit', w2).value = c.unit || ''; $('#fi-ppu', w2).value = c.price || ''; if (m && m.thumb_data) { $('#fi-thumb', w2).dataset.media = m.id; $('#fi-thumb', w2).innerHTML = `<img src="${m.thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; } }; };
-  openFindingForm.reopen = () => { const keep = { title: $('#fi-title') && $('#fi-title').value, desc: $('#fi-desc') && $('#fi-desc').value, qty: $('#fi-qty') && $('#fi-qty').value }; const w2 = openFindingForm(job, idx); if (keep.qty) $('#fi-qty', w2).value = keep.qty; return w2; };
+  openFindingForm.reopen = () => { const keep = { qty: $('#fi-qty') && $('#fi-qty').value }; const w2 = openFindingForm(job, fid); if (keep.qty) $('#fi-qty', w2).value = keep.qty; return w2; };
   $('#fi-save', w).onclick = async () => {
-    const qty = Number($('#fi-qty', w).value); if (!$('#fi-title', w).value.trim()) return toast('מה מצאת?'); if (!(qty > 0)) return toast('כמות גדולה מ-0');
-    const n = { ...f, title: $('#fi-title', w).value.trim(), description: $('#fi-desc', w).value.trim(), qty, unit: $('#fi-unit', w).value.trim(), price_per_unit: Number($('#fi-ppu', w).value) || 0, media_id: $('#fi-thumb', w).dataset.media || f.media_id || null };
-    if (idx != null) list[idx] = n; else list.push(n);
-    await DB.save('jobs', { id: job.id, findings: list }); if (['lead'].includes(job.stage)) await DB.stage(job.id, 'visit'); closeSheet(); render(); toast('ממצא נשמר');
+    const qty = Number($('#fi-qty', w).value), ppu = Number($('#fi-ppu', w).value) || 0; if (!$('#fi-title', w).value.trim()) return toast('מה מצאת?'); if (!(qty > 0)) return toast('כמות גדולה מ-0'); if (ppu < 0) return toast('מחיר לא יכול להיות שלילי');
+    await DB.save('findings', { ...(fid ? { id: fid } : { job_id: job.id }), title: $('#fi-title', w).value.trim(), description: $('#fi-desc', w).value.trim(), qty, unit: $('#fi-unit', w).value.trim(), price_per_unit: ppu, media_id: $('#fi-thumb', w).dataset.media || f.media_id || null, catalog_id: f.catalog_id || null });
+    if (job.stage === 'lead') await DB.stage(job.id, 'visit'); closeSheet(); render(); toast('ממצא נשמר');
   };
   setTimeout(() => $('#fi-title', w).focus(), 50); return w;
 }
@@ -368,12 +368,12 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'add-photos' && job) { const w = sheet('t-photo-kind'); w.addEventListener('click', (ev) => { const k = ev.target.closest('[data-kind]'); if (!k) return; closeSheet(); const inp = $('#photo-in'); inp.dataset.forJob = job.id; inp.dataset.forCust = job.customer_id; inp.dataset.forTag = k.dataset.kind; delete inp.dataset.forFinding; inp.click(); }); }
   else if (t.dataset.tag !== undefined && $('#lightbox').dataset.media) { await DB.save('media', { id: $('#lightbox').dataset.media, tag: t.dataset.tag || null }); toast('סווג'); render(); }
   else if (t.dataset.act === 'new-finding' && job) openFindingForm(job);
-  else if (t.dataset.finding !== undefined && job) openFindingForm(job, +t.dataset.finding);
-  else if (t.dataset.act === 'clear-findings' && job) confirmAsk('לנקות את הממצאים?', 'הממצאים יימחקו מהעבודה (התמונות נשארות).', async () => { await DB.save('jobs', { id: job.id, findings: [] }); render(); });
+  else if (t.dataset.finding && job) openFindingForm(job, t.dataset.finding);
+  else if (t.dataset.act === 'clear-findings' && job) confirmAsk('לנקות את הממצאים?', 'הממצאים יימחקו מהעבודה (התמונות נשארות).', async () => { for (const f of findingsOf(job.id)) await DB.trash('findings', f.id); render(); });
   else if (t.dataset.act === 'voice' && job) startVoice(job);
   else if (t.dataset.media) openMedia(t.dataset.media);
   else if (t.dataset.quote) show('quote', { id: t.dataset.quote });
-  else if (t.dataset.act === 'new-quote' && job) { const q = await Q.create(job); show('quote', { id: q.id }); }
+  else if (t.dataset.act === 'new-quote' && job) { if (t.disabled) return; t.disabled = true; try { const q = await Q.create(job); show('quote', { id: q.id }); } finally { t.disabled = false; } }   // לחיצה כפולה לא יוצרת שתי הצעות
   else if (S.view === 'quote' && t.dataset.act) quoteAction(t.dataset.act, t);
   else if (t.dataset.act === 'print') { document.title = $('#v-print').dataset.title || document.title; window.print(); }
   else if (t.hasAttribute('data-close-lb')) $('#lightbox').hidden = true;
