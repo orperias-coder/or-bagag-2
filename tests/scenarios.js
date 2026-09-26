@@ -117,6 +117,47 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const vrows = await p.evaluate(async () => (await sb.from('quote_versions').select('version').eq('quote_id', S.params.id)).data);
   ok('S5: version row in cloud', Array.isArray(vrows) && vrows.length === 1 && vrows[0].version === 1);
 
+  // ---- S7: תצוגת-הדפסה מכילה את כל חלקי הפורמט הקיים ----
+  await p.click('[data-act="pdf"]'); await p.waitForSelector('#v-print:not([hidden]) .page');
+  const pr = await p.locator('#v-print').textContent();
+  for (const s of ['אור בגג', 'אור פריאס', '054-5725681', 'ח.פ. 307951517', 'הצעת מחיר #', 'בתוקף עד', 'לכבוד', 'תיאור הסעיף', 'סה"כ לפני מע"מ', 'מע"מ 18%', 'סה"כ לתשלום', 'מקדמה 30%', 'תנאי תשלום', 'עבודות בלתי-צפויות', 'תנאים כלליים', 'חתימת הלקוח', 'חתימת הקבלן', 'הופק מאפליקציית']) ok('S7: print has "' + s + '"', pr.includes(s));
+  await p.pdf({ path: OUT + '/quote.pdf', format: 'A4', printBackground: true });
+  await p.click('#v-print [data-back]'); await p.waitForSelector('#v-quote:not([hidden])');
+  // ---- כסף: אישור → סוכם מההצעה; תשלום חלקי; חשבונית; תשלום מלא → שולם ----
+  await p.click('#v-quote [data-back]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('[data-stage="approved"]'); await p.waitForFunction(() => document.querySelector('#v-job .chip.approved'));
+  const agreed = await p.evaluate(() => D.jobs.find((j) => j.id === S.params.id).price_agreed);
+  ok('money: price agreed from quote (10,502 = 8,900+vat)', Math.round(agreed) === 10502, String(agreed));
+  await p.click('[data-stage="doing"]'); await p.waitForFunction(() => document.querySelector('#v-job .chip.doing'));
+  await p.click('[data-act="add-payment"]'); await p.fill('#p-amount', '5000'); await p.click('#p-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  ok('money: remaining shown', (await p.locator('#v-job').textContent()).includes('5,502'));
+  await p.click('#tabs [data-tab="money"]'); await p.waitForSelector('#v-money:not([hidden])');
+  const mt = await p.locator('#v-money').textContent(); ok('money: screen lists debt and no-invoice payment', mt.includes('5,502') && mt.includes('הוצאתי חשבונית'));
+  await p.screenshot({ path: OUT + '/money.png' });
+  await p.click('#v-money [data-inv]'); await p.waitForTimeout(200);
+  await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  ok('money: invoice marked', (await p.locator('#v-job').textContent()).includes('חשבונית הוצאה'));
+  await p.click('[data-act="add-payment"]'); await p.click('#p-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  await p.waitForFunction(() => document.querySelector('#v-job .chip.paid'), null, { timeout: 5000 }).catch(() => {});
+  ok('money: full payment closes job (paid)', (await p.locator('#v-job .chip.paid').count()) === 1);
+  await settle(p);
+
+  // ---- עוד: הגדרות, קטלוג, גיבוי לקובץ, התראה ----
+  await p.click('#tabs [data-tab="more"]'); await p.click('[data-open="settings"]'); await p.waitForSelector('#v-settings:not([hidden]) #s-biz');
+  await p.fill('#s-biz', 'אור בגג'); await p.fill('#s-valid', '45'); await p.click('[data-act="save-settings"]'); await settle(p);
+  ok('more: settings saved in cloud', (await p.evaluate(async () => (await sb.from('settings').select('quote_template').maybeSingle()).data.quote_template.validityDays)) === 45);
+  await p.click('#tabs [data-tab="more"]'); await p.click('[data-open="catalog"]'); await p.waitForSelector('#v-catalog:not([hidden])');
+  await p.click('[data-act="cat-add"]'); await p.fill('#c-name', 'e2e פריט'); await p.fill('#c-price', '123'); await p.click('#c-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  ok('more: catalog item added', (await p.locator('#v-catalog').textContent()).includes('e2e פריט'));
+  await p.click('#tabs [data-tab="more"]');
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="backup-file"]')]);
+  const bk = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+  ok('more: backup file has all keys', ['customers', 'jobs', 'quotes', 'payments', 'settings'].every((k) => k in bk) && bk.customers.length > 0);
+  await p.evaluate(async () => { await sb.from('alerts').insert({ user_id: D.uid, kind: 'test', message: 'e2e התראת בדיקה' }); await DB.loadAll(); render(); });
+  ok('more: alert banner shown', (await p.locator('#alerts .alert').count()) === 1);
+  await p.click('#alerts [data-seen]'); await p.waitForTimeout(150); ok('more: alert dismissed', (await p.locator('#alerts .alert').count()) === 0);
+  await settle(p);
+
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('CRASH', e); process.exit(2); });

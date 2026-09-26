@@ -37,9 +37,9 @@ function show(view, params) {
 function back() { const p = S.stack.pop(); if (!p) return show('customers'); S.view = p.view; S.params = p.params || {}; render(); }
 function render() {
   document.querySelectorAll('.view').forEach((v) => v.hidden = true);
-  const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint };
-  (map[S.view] || renderCustomers)();
-  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customer: 'customers', job: 'customers', quote: 'customers', print: 'customers', trash: 'more' }[S.view] || S.view)));
+  const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
+  (map[S.view] || renderCustomers)(); renderAlerts();
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customer: 'customers', job: 'customers', quote: 'customers', print: 'customers', trash: 'more', settings: 'more', catalog: 'more' }[S.view] || S.view)));
 }
 
 // ---------- מסכים ----------
@@ -101,7 +101,7 @@ function renderJob() {
   ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
   <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
-  ${(j.price_agreed || ps.length) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ' · <b style="color:var(--warn)">בלי חשבונית</b>'}</span><b>${money(p.amount)}</b></div>`).join('')}</div>` : ''}
+  ${(j.price_agreed || ps.length || ['approved', 'doing', 'paid'].includes(j.stage)) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-inv="${p.id}">הוצאתי חשבונית</button>`}</span><b>${money(p.amount)}</b></div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="add-payment">רשום תשלום</button></div></div>` : ''}
   </div><div>
   <div class="section">תמונות · ${ms.length}</div><div class="card"><div class="thumbs">${ms.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div><div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
   </div></div>`;
@@ -118,20 +118,96 @@ async function openMedia(id) {
   const url = await DB.photoUrl(m.storage_path); if (!url) return toast('לא הצלחתי לפתוח את התמונה');
   const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.hidden = false;
 }
-function renderPrint() { const v = $('#v-print'); v.hidden = false; v.innerHTML = '<div class="empty">תצוגת ההדפסה — במשימה הבאה</div>'; }
+const BIZ_DEFAULT = { businessName: 'אור בגג', ownerName: 'אור פריאס', phone: '054-5725681', email: 'or.perias@gmail.com', taxId: '307951517' };
+const UNFORESEEN_DEFAULT = 'במידה ויתגלו במהלך העבודה כשלים, נזקים או צרכים שלא נצפו ואינם כלולים בהצעה זו — יינתן עבורם תמחור נפרד בתיאום מראש עם הלקוח.';
+const GENERAL_TERMS = ['המחירים כוללים אך ורק את הסעיפים המפורטים בהצעה זו. עבודה שאינה מופיעה כאן אינה כלולה במחיר.', 'לוח הזמנים כפוף לתנאי מזג האוויר ולזמינות חומרים, ויתואם מראש מול הלקוח.', 'ההצעה מחייבת את הצדדים רק לאחר אישור הלקוח, ובתוקף עד המועד הנקוב בראש המסמך.'];
+function renderPrint() {
+  const v = $('#v-print'); v.hidden = false;
+  const q = Q.cur(S.params.id); if (!q) return v.innerHTML = '<div class="empty">הצעה לא נמצאה</div>';
+  const j = D.jobs.find((x) => x.id === q.job_id) || {}, c = custOf(j.customer_id) || {}, k = Q.calc(q);
+  const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl();
+  const items = (q.items || []).filter((i) => i.visible !== false), hasUrg = items.some((i) => i.urgency);
+  const fmt = (n) => '₪ ' + Number(n || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 });
+  const dateFull = (d) => new Date(d).toLocaleDateString('he-IL');
+  v.dataset.title = `הצעת מחיר ${q.number || ''} - ${c.name || ''}`.trim();
+  v.innerHTML = `<div class="print-tools"><button class="btn" data-back>‹ חזרה</button><button class="btn pri" data-act="print">הדפס / שמור PDF</button><span class="dim">בטלפון: "שמור כ-PDF" ואז שיתוף בוואטסאפ</span></div>
+  <div class="page">
+    <div class="ph"><div><div class="biz">${esc(b.businessName)}</div><div class="owner">${esc(b.ownerName)}</div></div><div class="contact"><div>${esc(b.phone)}</div><div dir="ltr">${esc(b.email)}</div><div>ח.פ. ${esc(b.taxId)}</div></div></div>
+    <div class="ptitle"><div class="pt">הצעת מחיר #${esc(q.number || '')}</div><div class="pd"><div><b>תאריך:</b> ${dateFull(q.sent_at || q.created_at)}</div><div class="valid"><b>בתוקף עד:</b> ${dateFull(Q.validUntil(q))}</div></div></div>
+    <div class="pto"><div class="dim">לכבוד</div><div class="cn">${esc(c.name || '')}</div>${c.address ? `<div class="dim">${esc(c.address)}</div>` : ''}</div>
+    <table class="pitems"><thead><tr><th>#</th><th class="desc">תיאור הסעיף</th><th>כמות</th><th>מחיר ליח'</th>${hasUrg ? '<th>דחיפות</th>' : ''}<th>סה"כ</th></tr></thead><tbody>
+    ${items.map((i, n) => `<tr><td>${n + 1}</td><td class="desc"><b>${esc(i.title)}</b>${i.description ? `<div class="idesc">${esc(i.description)}</div>` : ''}</td><td>${i.qty} ${esc(i.unit || '')}</td><td>${fmt(i.price_per_unit)}</td>${hasUrg ? `<td>${esc(i.urgency || '')}</td>` : ''}<td class="sum">${fmt(i.total)}</td></tr>`).join('')}</tbody></table>
+    <div class="ptot"><div class="box">${k.disc ? `<div class="r"><span>סה"כ סעיפים</span><span>${fmt(k.sum)}</span></div><div class="r"><span>הנחה</span><span>− ${fmt(k.disc)}</span></div>` : ''}<div class="r"><span>סה"כ לפני מע"מ</span><span>${fmt(k.before)}</span></div><div class="r"><span>מע"מ ${q.vat_rate}%</span><span>${fmt(k.vat)}</span></div><div class="r big"><span>סה"כ לתשלום</span><span>${fmt(k.total)}</span></div><div class="r"><span>מקדמה 30%</span><span>${fmt(k.advance)}</span></div></div></div>
+    ${q.payment_terms ? `<div class="pbox"><b>תנאי תשלום</b><div>${esc(q.payment_terms)}</div></div>` : ''}
+    ${q.notes ? `<div class="pbox"><b>הערות</b><div class="pre">${esc(q.notes)}</div></div>` : ''}
+    <div class="pbox dashed"><b>הבהרה — עבודות בלתי-צפויות</b><div>${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</div></div>
+    <div class="pbox"><b>תנאים כלליים</b>${GENERAL_TERMS.map((x) => `<div>${esc(x)}</div>`).join('')}</div>
+    <div class="psig"><div><div class="line"></div>חתימת הלקוח · תאריך</div><div><div class="line"></div>חתימת הקבלן · תאריך</div></div>
+    <div class="pfoot">הופק מאפליקציית "אור בגג" · ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>
+  </div>`;
+}
+function openPaymentForm(job) {
+  const w = sheet('t-payment-form'); const paid = paymentsOf(job.id).reduce((a, p) => a + Number(p.amount || 0), 0);
+  $('#p-amount', w).value = job.price_agreed ? Math.max(0, Math.round(job.price_agreed - paid)) : ''; $('#p-date', w).value = new Date().toISOString().slice(0, 10);
+  $('#p-save', w).onclick = async () => {
+    const amount = Number($('#p-amount', w).value) || 0; if (amount <= 0) return toast('צריך סכום');
+    await DB.save('payments', { job_id: job.id, amount, paid_at: $('#p-date', w).value || new Date().toISOString().slice(0, 10), method: $('#p-method', w).value, note: $('#p-note', w).value.trim() || null, invoice_issued: $('#p-inv', w).checked });
+    closeSheet();
+    const total = paymentsOf(job.id).reduce((a, p) => a + Number(p.amount || 0), 0);
+    if (job.price_agreed && total >= job.price_agreed - 1 && job.stage !== 'paid') { await DB.stage(job.id, 'paid'); toast('שולם במלואו — העבודה נסגרה'); } else toast('התשלום נרשם');
+    render();
+  };
+}
 function renderMoney() {
   const v = $('#v-money'); v.hidden = false;
   const owe = live(D.jobs).filter((j) => ['approved', 'doing'].includes(j.stage) && j.price_agreed).map((j) => ({ j, left: j.price_agreed - paymentsOf(j.id).reduce((a, p) => a + Number(p.amount || 0), 0) })).filter((x) => x.left > 0);
   const noInv = live(D.payments).filter((p) => !p.invoice_issued);
   v.innerHTML = `<div class="section">חייבים לך</div><div class="list">${owe.map(({ j, left }) => `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${esc(j.title || '')}</div></div><b>${money(left)}</b></div>`).join('') || '<div class="empty">אין חובות פתוחים</div>'}</div>
-  <div class="section">תשלומים בלי חשבונית · ${noInv.length}</div><div class="list">${noInv.map((p) => { const j = D.jobs.find((x) => x.id === p.job_id) || {}; return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${dateHe(p.paid_at)}</div></div><b>${money(p.amount)}</b></div>`; }).join('') || '<div class="empty">הכל עם חשבונית</div>'}</div>`;
+  <div class="section">תשלומים בלי חשבונית · ${noInv.length}</div><div class="dim" style="margin-bottom:6px">להוציא בחשבונית ירוקה, ואז לסמן כאן.</div><div class="list">${noInv.map((p) => { const j = D.jobs.find((x) => x.id === p.job_id) || {}; return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${dateHe(p.paid_at)} · ${money(p.amount)}</div></div><button class="btn sm" data-inv="${p.id}">הוצאתי חשבונית</button></div>`; }).join('') || '<div class="empty">הכל עם חשבונית</div>'}</div>`;
 }
 function renderMore() {
   const v = $('#v-more'); v.hidden = false;
   const trashed = D.customers.filter((c) => c.deleted_at).length + D.jobs.filter((j) => j.deleted_at).length + D.quotes.filter((q) => q.deleted_at).length;
-  v.innerHTML = `<div class="card"><b>אור בגג 2</b> · גרסה ${APP_VERSION}<div class="dim">נתונים עודכנו ${D.loadedAt ? new Date(D.loadedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '—'} · ${live(D.customers).length} לקוחות · ${live(D.jobs).length} עבודות · ${live(D.quotes).length} הצעות</div></div>
+  const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl(), cat = ((D.settings && D.settings.catalog) || []);
+  v.innerHTML = `<div class="card"><b>אור בגג</b> · גרסה ${APP_VERSION}<div class="dim">עודכן ${D.loadedAt ? new Date(D.loadedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '—'} · ${live(D.customers).length} לקוחות · ${live(D.jobs).length} עבודות · ${live(D.quotes).length} הצעות</div>
+  <div class="actions"><button class="btn sm" id="refresh">רענן מהענן</button><button class="btn sm" data-act="backup-file">גיבוי לקובץ</button><button class="btn sm ghost" id="logout">התנתק</button></div></div>
   <div class="card" style="cursor:pointer" data-open="trash"><b>סל המיחזור</b> · ${trashed} פריטים<div class="dim">שום דבר לא נמחק באמת. לחץ לשחזור.</div></div>
-  <div class="card"><button class="btn" id="refresh">רענן נתונים מהענן</button> <button class="btn ghost" id="logout">התנתק</button></div>`;
+  <div class="card" style="cursor:pointer" data-open="catalog"><b>הקטלוג והמחירון</b> · ${cat.filter((c) => !c.hidden).length} פריטים<div class="dim">סעיפים מוכנים להצעות מחיר, מחירים לפני מע"מ.</div></div>
+  <div class="card" style="cursor:pointer" data-open="settings"><b>פרטי העסק ותבנית ההצעה</b><div class="dim">${esc(b.businessName)} · ${esc(b.ownerName)} · מע"מ ${t.vatRate ?? 18}% · תוקף ${t.validityDays || 30} יום</div></div>
+  <div class="card" id="failed-card"><b>כתיבות שהענן דחה</b> · <span id="failed-n">…</span><div class="dim">שינויים שהענן לא קיבל נשמרים כאן עם השגיאה, לא נזרקים.</div></div>`;
+  DB._failed().then((f) => { const n = $('#failed-n'); if (n) n.textContent = f.length; if (f.length && $('#failed-card')) $('#failed-card').innerHTML += f.slice(0, 10).map((x) => `<div class="qitem"><span>${esc(x.table || x.op)} · ${dateHe(x.failedAt)}</span><span class="dim" style="font-size:12px">${esc(String(x.error).slice(0, 90))}</span></div>`).join(''); });
+}
+function renderSettings() {
+  const v = $('#v-settings'); v.hidden = false; const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl();
+  v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="section">פרטי העסק (מופיעים בהצעה)</div><div class="card sheet" style="max-height:none">
+  <label>שם העסק<input id="s-biz" value="${esc(b.businessName)}"></label><label>שם בעל העסק<input id="s-owner" value="${esc(b.ownerName)}"></label><label>טלפון<input id="s-phone" dir="ltr" value="${esc(b.phone)}"></label><label>אימייל<input id="s-email" dir="ltr" value="${esc(b.email)}"></label><label>ח.פ. / עוסק<input id="s-tax" dir="ltr" value="${esc(b.taxId)}"></label></div>
+  <div class="section">תבנית הצעת מחיר</div><div class="card sheet" style="max-height:none">
+  <div class="row2"><label style="flex:1">מע"מ %<input id="s-vat" type="number" dir="ltr" value="${t.vatRate ?? 18}"></label><label style="flex:1">תוקף (ימים)<input id="s-valid" type="number" dir="ltr" value="${t.validityDays || 30}"></label></div>
+  <label>תנאי תשלום<input id="s-terms" value="${esc(t.paymentTerms || '30% מקדמה במועד החתימה, 70% בסיום העבודה')}"></label><label>הערות קבועות להצעה<textarea id="s-notes" rows="3">${esc(t.standardNotes || '')}</textarea></label><label>נוסח "עבודות בלתי-צפויות"<textarea id="s-unf" rows="3">${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</textarea></label>
+  <button class="btn pri" data-act="save-settings">שמור</button></div>`;
+}
+function renderCatalog() {
+  const v = $('#v-catalog'); v.hidden = false; const cat = ((D.settings && D.settings.catalog) || []); const f = (S.params.q || '').trim();
+  const rows = cat.map((c, i) => [c, i]).filter(([c]) => !f || (c.name || '').includes(f) || (c.category || '').includes(f));
+  v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="section">הקטלוג · ${cat.filter((c) => !c.hidden).length}</div><div class="row2"><input id="cat-q" class="txt" placeholder="חיפוש" value="${esc(f)}" style="flex:1"><button class="btn pri" data-act="cat-add">הוסף פריט</button></div>
+  <div class="list" style="margin-top:8px">${rows.map(([c, i]) => `<div class="row ${c.hidden ? 'off' : ''}" data-cat-edit="${i}" style="${c.hidden ? 'opacity:.5' : ''}"><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(c.category || '')}${c.price != null ? ' · ' + money(c.price) + (c.unit ? ' / ' + esc(c.unit) : '') : ''}${c.hidden ? ' · מוסתר' : ''}</div></div><span class="dim">ערוך</span></div>`).join('') || '<div class="empty">ריק</div>'}</div>`;
+  $('#cat-q', v).oninput = (e) => { S.params.q = e.target.value; renderCatalog(); const i = $('#cat-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); };
+}
+function openCatalogItem(idx) {
+  const cat = [...((D.settings && D.settings.catalog) || [])]; const c = idx != null ? { ...cat[idx] } : { name: '', category: '', unit: '', price: '', description: '' };
+  const w = sheet('t-catalog-item'); $('#c-name', w).value = c.name || ''; $('#c-cat', w).value = c.category || ''; $('#c-unit', w).value = c.unit || ''; $('#c-price', w).value = c.price ?? ''; $('#c-desc', w).value = c.description || ''; $('#c-hide', w).textContent = c.hidden ? 'הצג שוב' : 'הסתר'; if (idx == null) $('#c-hide', w).hidden = true;
+  $('#c-save', w).onclick = async () => { const n = { ...c, name: $('#c-name', w).value.trim(), category: $('#c-cat', w).value.trim(), unit: $('#c-unit', w).value.trim(), price: Number($('#c-price', w).value) || 0, description: $('#c-desc', w).value.trim() }; if (!n.name) return toast('צריך שם'); if (idx != null) cat[idx] = n; else cat.push(n); await DB.save('settings', { catalog: cat }); closeSheet(); render(); toast('נשמר'); };
+  $('#c-hide', w).onclick = async () => { cat[idx] = { ...c, hidden: !c.hidden }; await DB.save('settings', { catalog: cat }); closeSheet(); render(); };
+}
+function backupToFile() {
+  const data = { app: 'or-bagag-2', exportedAt: new Date().toISOString(), customers: D.customers, jobs: D.jobs, quotes: D.quotes, quote_versions: D.quote_versions, payments: D.payments, media: D.media.map((m) => ({ ...m, thumb_data: undefined })), settings: D.settings };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = 'or-bagag-2-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click(); toast('הגיבוי ירד לקבצים');
+}
+function renderAlerts() {
+  const open = (D.alerts || []).filter((x) => !x.seen_at); let bar = $('#alerts');
+  if (!open.length) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'alerts'; $('#views').before(bar); }
+  bar.innerHTML = open.map((x) => `<div class="alert"><span>${esc(x.message)}</span><button class="btn sm" data-seen="${x.id}">ראיתי</button></div>`).join('');
 }
 
 // ---------- גיליונות וטפסים ----------
@@ -177,7 +253,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
   const job = S.view === 'job' ? live(D.jobs).find((x) => x.id === S.params.id) : null;
@@ -191,7 +267,11 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'edit-customer' && cur) openCustomerForm(cur);
   else if (t.dataset.act === 'new-job' && cur) openJobForm(cur.id);
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
-  else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה'); await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
+  else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה');
+    if (s === 'approved') { const q = quotesOf(job.id).find((x) => x.status === 'sent') || quotesOf(job.id)[0]; if (q) { await Q.save(q, { status: 'accepted' }, { noVersion: true }); await DB.save('jobs', { id: job.id, price_agreed: q.total }); } }
+    await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
+  else if (t.dataset.act === 'add-payment' && job) openPaymentForm(job);
+  else if (t.dataset.inv) { await DB.save('payments', { id: t.dataset.inv, invoice_issued: true }); render(); toast('סומן: חשבונית הוצאה'); }
   else if (t.dataset.act === 'trash-job' && job) confirmAsk('להעביר את העבודה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('jobs', job.id); back(); toast('הועבר לסל'); });
   else if (t.dataset.act === 'add-photos' && job) { $('#photo-in').dataset.forJob = job.id; $('#photo-in').dataset.forCust = job.customer_id; $('#photo-in').click(); }
   else if (t.dataset.media) openMedia(t.dataset.media);
@@ -201,6 +281,13 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'print') { document.title = $('#v-print').dataset.title || document.title; window.print(); }
   else if (t.hasAttribute('data-close-lb')) $('#lightbox').hidden = true;
   else if (t.dataset.open === 'trash') show('trash');
+  else if (t.dataset.open === 'settings') show('settings');
+  else if (t.dataset.open === 'catalog') show('catalog', { q: '' });
+  else if (t.dataset.act === 'save-settings') { await DB.save('settings', { business: { ...((D.settings && D.settings.business) || {}), businessName: $('#s-biz').value.trim(), ownerName: $('#s-owner').value.trim(), phone: $('#s-phone').value.trim(), email: $('#s-email').value.trim(), taxId: $('#s-tax').value.trim() }, quote_template: { ...Q.tpl(), vatRate: Number($('#s-vat').value) || 18, validityDays: Number($('#s-valid').value) || 30, paymentTerms: $('#s-terms').value.trim(), standardNotes: $('#s-notes').value, unforeseenClause: $('#s-unf').value.trim() } }); toast('נשמר'); back(); }
+  else if (t.dataset.act === 'cat-add') openCatalogItem();
+  else if (t.dataset.catEdit) openCatalogItem(+t.dataset.catEdit);
+  else if (t.dataset.act === 'backup-file') backupToFile();
+  else if (t.dataset.seen) { await DB.save('alerts', { id: t.dataset.seen, seen_at: new Date().toISOString() }); renderAlerts(); }
   else if (t.dataset.restore) { const [tb, id] = t.dataset.restore.split(':'); await DB.restore(tb, id); if (tb === 'customers') for (const j of D.jobs.filter((j) => j.customer_id === id && j.deleted_at)) await DB.restore('jobs', j.id); render(); toast('שוחזר'); }
   else if (t.id === 'refresh') { toast('טוען…'); await DB.loadAll(); render(); toast('עודכן'); }
   else if (t.id === 'logout') { await sb.auth.signOut(); location.reload(); }

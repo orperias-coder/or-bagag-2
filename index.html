@@ -9,6 +9,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="print.css">
 </head>
 <body>
 <div id="app">
@@ -41,6 +42,8 @@
     <section id="v-trash" class="view" hidden></section>
     <section id="v-quote" class="view" hidden></section>
     <section id="v-print" class="view" hidden></section>
+    <section id="v-settings" class="view" hidden></section>
+    <section id="v-catalog" class="view" hidden></section>
   </main>
 
   <nav id="tabs" hidden>
@@ -64,6 +67,14 @@
 <div class="total"><span>סה"כ לסעיף</span><span id="i-total">0 ₪</span></div><button class="btn pri" id="i-save">שמור סעיף</button></div></template>
 <template id="t-catalog"><div class="sheet"><div class="sheet-h"><b>מהקטלוג</b><button class="btn sm ghost" data-close>סגור</button></div><input id="cat-search" placeholder="חיפוש בקטלוג" autocomplete="off"><div class="list" id="cat-list"></div></div></template>
 <template id="t-discount"><div class="sheet"><div class="sheet-h"><b>הנחה</b><button class="btn sm ghost" data-close>סגור</button></div><div class="row2"><label style="flex:1">סוג<select id="d-type"><option value="amount">סכום בש"ח</option><option value="percent">אחוזים</option></select></label><label style="flex:1">ערך (0 = בלי הנחה)<input id="d-value" type="number" inputmode="decimal" dir="ltr"></label></div><button class="btn pri" id="d-save">שמור</button></div></template>
+<template id="t-payment-form"><div class="sheet"><div class="sheet-h"><b>רישום תשלום</b><button class="btn sm ghost" data-close>סגור</button></div>
+<div class="row2"><label style="flex:1">סכום (כולל מע"מ)<input id="p-amount" type="number" inputmode="decimal" dir="ltr"></label><label style="flex:1">תאריך<input id="p-date" type="date"></label></div>
+<div class="row2"><label style="flex:1">אמצעי<select id="p-method"><option value="העברה">העברה בנקאית</option><option value="ביט">ביט</option><option value="צ'ק">צ'ק</option><option value="אשראי">אשראי</option><option value="מזומן">מזומן</option></select></label></div>
+<label>הערה<input id="p-note" autocomplete="off"></label><label class="chk"><input id="p-inv" type="checkbox"> הוצאתי כבר חשבונית בחשבונית ירוקה</label>
+<button class="btn pri" id="p-save">שמור תשלום</button></div></template>
+<template id="t-catalog-item"><div class="sheet"><div class="sheet-h"><b>פריט בקטלוג</b><button class="btn sm ghost" data-close>סגור</button></div>
+<label>שם<input id="c-name" autocomplete="off"></label><div class="row2"><label style="flex:1">קטגוריה<input id="c-cat"></label><label style="flex:1">יחידה<input id="c-unit" placeholder="מטר / יח'"></label></div><label>מחיר ליחידה (לפני מע"מ)<input id="c-price" type="number" inputmode="decimal" dir="ltr"></label><label>תיאור להצעה<textarea id="c-desc" rows="3"></textarea></label>
+<div class="row2"><button class="btn pri" id="c-save">שמור</button><button class="btn ghost" id="c-hide">הסתר</button></div></div></template>
 <template id="t-confirm"><div class="sheet"><b id="confirm-title"></b><div class="dim" id="confirm-msg"></div><div class="row2"><button class="btn" data-close>בטל</button><button class="btn danger" id="confirm-yes">כן</button></div></div></template>
 <template id="t-pick-customer"><div class="sheet"><div class="sheet-h"><b>לאיזה לקוח?</b><button class="btn sm ghost" data-close>סגור</button></div><input id="pick-search" placeholder="חיפוש" autocomplete="off"><div class="list" id="pick-list"></div></div></template>
 <input id="photo-in" type="file" accept="image/*" multiple capture="environment" hidden>

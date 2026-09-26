@@ -51,9 +51,13 @@ const DB = (() => {
           const msg = String((e && e.message) || e);
           // כשל-רשת → עוצרים ומנסים אחר-כך (שומרים סדר). כשל-נתונים (הענן דחה) → הפריט לא חוסם את השאר:
           // נשמר ב"כתיבות שנדחו" עם השגיאה, ונרשם ביומן-האירועים. שום דבר לא נזרק.
-          const isNet = !e || !e.code && /fetch|network|Failed to|timeout/i.test(msg);
+          const status = Number((e && (e.status || e.statusCode)) || 0);
+          const isNet = !e || (!e.code && /fetch|network|Failed to|timeout|load failed/i.test(msg)) || status >= 500 || status === 429 || status === 408;
           console.warn('[queue]', item.op, item.table || '', msg);
           if (isNet) break;
+          // כשל לא-רשתי: מנסים עוד כמה פעמים לפני שמוותרים (העלאת תמונה יכולה להיכשל זמנית)
+          item.tries = (item.tries || 0) + 1;
+          if (item.tries < (item.op === 'upload' ? 8 : 3)) { await qPut(item); break; }
           await fPut({ ...item, error: msg, failedAt: Date.now() }); await qDel(item.qid);
           try { await sb.from('events').insert({ entity: item.table || item.op, entity_id: (item.row && item.row.id) || uuid(), action: 'sync-failed', device: DEVICE, diff: { error: msg, op: item.op } }); } catch (e2) {}
         }
@@ -68,7 +72,7 @@ const DB = (() => {
   async function save(table, patch) {
     const now = new Date().toISOString(); const isNew = !patch.id;
     const base = table === 'settings' ? (D.settings || {}) : (isNew ? { id: uuid(), created_at: now } : ((D[table] || []).find((x) => x.id === patch.id) || {}));
-    const row = { ...base, ...patch }; if (table !== 'quote_versions') row.updated_at = now;   // ל-quote_versions אין updated_at (גרסה לא משתנה)
+    const row = { ...base, ...patch }; if (!['quote_versions', 'alerts'].includes(table)) row.updated_at = now;   // ל-quote_versions אין updated_at (גרסה לא משתנה)
     for (const k of Object.keys(row)) if (k.startsWith('_')) delete row[k];
     delete row.user_id;                                       // הענן ממלא auth.uid()
     local(table, row);
