@@ -16,7 +16,7 @@ const ok = (name, cond, extra) => { console.log((cond ? 'PASS ' : 'FAIL ') + nam
     p.on('pageerror', (e) => errors.push(String(e))); p.on('console', (m) => { if (m.type() === 'error' && !/ERR_INTERNET_DISCONNECTED|Failed to fetch/.test(m.text())) errors.push(m.text()); });
     await p.goto(URL); await p.waitForSelector('#login:not([hidden])', { timeout: 15000 });
     await p.fill('#li-email', 'app2test@example.com'); await p.fill('#li-pass', PW); await p.click('#li-go');
-    await p.waitForSelector('#cust-list .row', { timeout: 20000 });
+    await p.waitForSelector('[data-act="all-customers"]', { timeout: 20000 }); await p.click('[data-act="all-customers"]');
     await p.waitForFunction(() => document.querySelectorAll('#cust-list .row').length >= 2, null, { timeout: 15000 }).catch(() => {});
     const rows = await p.locator('#cust-list .row').count();
     ok(`${label}: login + customers list`, rows >= 2, rows + ' rows');
@@ -44,7 +44,7 @@ const ok = (name, cond, extra) => { console.log((cond ? 'PASS ' : 'FAIL ') + nam
     ok(`${label}: work tab grouped by stage`, (await p.locator('#cust-list .section').count()) >= 2);
     // בלי רשת: המסך נפתח מהעותק המקומי
     await ctx.setOffline(true); await p.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-    await p.waitForSelector('#cust-list .row', { timeout: 15000 }).catch(() => {});
+    await p.waitForSelector('[data-act="all-customers"]', { timeout: 15000 }).catch(() => {}); await p.click('[data-act="all-customers"]').catch(() => {});
     ok(`${label}: offline reload shows cached customers`, (await p.locator('#cust-list .row').count()) >= 2);
     await ctx.setOffline(false);
     ok(`${label}: no JS errors`, errors.length === 0, errors.slice(0, 3).join(' | '));

@@ -48,7 +48,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.fill('#search', N1); ok('S4: not in list after trash', !(await p.locator('#cust-list').textContent()).includes(N1));
   await p.click('#tabs [data-tab="more"]'); await p.click('[data-open="trash"]'); await p.waitForSelector('#v-trash:not([hidden])');
   ok('S4: in trash', (await p.locator('#v-trash').textContent()).includes(N1));
-  await p.click(`[data-restore="customers:${cid}"]`); await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N1);
+  await p.click(`[data-restore="customers:${cid}"]`); await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N1);
   ok('S4: restored with phone+address', (await p.locator('#cust-list').textContent()).includes('0501111111'));
   await settle(p);
   const cloud = await p.evaluate(async (id) => (await sb.from('customers').select('deleted_at,address').eq('id', id).single()).data, cid);
@@ -76,7 +76,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
 
   // ---- S1: בלי רשת: לקוח + עבודה + 3 תמונות + הערות → רשת → במחשב הכל שם ----
   const N2 = 'e2e ביקור ' + String(Date.now()).slice(-5);
-  await ctx.setOffline(true); await p.click('#tabs [data-tab="customers"]'); await p.click('#plus'); await p.click('[data-new="customer"]');
+  await ctx.setOffline(true); await p.click('#tabs [data-tab="today"]'); await p.click('#plus'); await p.click('[data-new="customer"]');
   await p.fill('#f-name', N2); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
   await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e ביקור'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4AWP4z8DwHwyBNBAAAP4dA/0Xm0J3AAAAAElFTkSuQmCC', 'base64');
@@ -104,7 +104,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const qnum = (await pd.locator('#q-number').textContent()).trim(); ok('S2: number assigned YYYY-NNN', /^\d{4}-\d{3}$/.test(qnum), qnum);
   await pd.screenshot({ path: OUT + '/s2-desktop-quote.png', fullPage: true });
   await settle(pd); await pd.context().close();
-  await p.evaluate(() => DB.loadAll().then(render)); await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  await p.evaluate(() => DB.loadAll().then(render)); await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
   ok('S2: phone shows same draft', (await p.locator('#q-totals').textContent()).includes('10,030') && (await p.locator('#v-quote').textContent()).includes('חידוש רוכבים'));
   await p.screenshot({ path: OUT + '/s2-phone-quote.png', fullPage: true });
   // ---- S5: עריכה אחרי "נשלחה" → גרסה 1 נשמרת, גרסה 2 מוצגת ----
@@ -135,7 +135,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const mt = await p.locator('#v-money').textContent(); ok('money: screen lists debt and no-invoice payment', mt.includes('5,502') && mt.includes('הוצאתי חשבונית'));
   await p.screenshot({ path: OUT + '/money.png' });
   await p.click('#v-money [data-inv]'); await p.waitForTimeout(200);
-  await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job:not([hidden]) .card');
   ok('money: invoice marked', (await p.locator('#v-job').textContent()).includes('חשבונית הוצאה'));
   await p.click('[data-act="add-payment"]'); await p.click('#p-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
   await p.waitForFunction(() => document.querySelector('#v-job .chip.paid'), null, { timeout: 5000 }).catch(() => {});
@@ -168,7 +168,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const merged = await p.evaluate(async (id) => (await sb.from('customers').select('phone,address').eq('id', id).single()).data, cc);
   ok('adv: concurrent field edits both survive', merged && merged.phone === '0500000002' && merged.address === 'כתובת חדשה מ-A', JSON.stringify(merged));
   // (2-4) כמות שלילית/אפס נחסמת; הנחה מוגבלת
-  await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
   const nBefore = await p.evaluate(() => Q.cur(S.params.id).items.length);
   await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'שלילי'); await p.fill('#i-qty', '-5'); await p.fill('#i-ppu', '100'); await p.click('#i-save'); await p.waitForTimeout(200);
   ok('adv: negative qty blocked', (await p.evaluate(() => Q.cur(S.params.id).items.length)) === nBefore && (await p.locator('#sheet-wrap').count()) === 1);
@@ -186,7 +186,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
 
   // ---- גל 2 א': ממצא → סעיף; תיוג תמונות; פרופיל גג; ממתינות להצעה ----
   const N3 = 'e2e ממצאים ' + String(Date.now()).slice(-5);
-  await p.click('#tabs [data-tab="customers"]'); await p.click('#plus'); await p.click('[data-new="customer"]'); await p.fill('#f-name', N3); await p.selectOption('#f-tiles', 'רעפים'); await p.selectOption('#f-access', 'סולם גבוה'); await p.fill('#f-floors', '2'); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
+  await p.click('#tabs [data-tab="today"]'); await p.click('#plus'); await p.click('[data-new="customer"]'); await p.fill('#f-name', N3); await p.fill('#f-address', 'הרצל 5 חיפה'); await p.selectOption('#f-tiles', 'רעפים'); await p.selectOption('#f-access', 'סולם גבוה'); await p.fill('#f-floors', '2'); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
   ok('A3: roof profile shown on card', (await p.locator('#v-customer').textContent()).includes('רעפים · סולם גבוה · 2 קומות'));
   await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e ממצאים'); await p.fill('#j-visit', '2026-09-20T09:00'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
   ok('A4: voice button exists', (await p.locator('#voice-btn').count()) === 1);
@@ -202,6 +202,23 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const [fc2] = await Promise.all([p.waitForEvent('filechooser'), (async () => { await p.click('[data-act="add-photos"]'); await p.click('[data-kind="interior"]'); })()]);
   await fc2.setFiles([{ name: 'wet.png', mimeType: 'image/png', buffer: png }]); await p.waitForFunction(() => document.querySelectorAll('#v-job .thumbs .th').length === 1);
   ok('A2: photo grouped under its tag', (await p.locator('#v-job').textContent()).includes('רטיבות בפנים · 1'));
+  await settle(p);
+
+  // ---- גל 2 ג': היום, משימות, יומן, ניווט ----
+  const now = new Date(); const pad = (n) => String(n).padStart(2, '0'); const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.waitForSelector('#v-customer:not([hidden]) h2');
+  await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e ביקור היום'); await p.fill('#j-visit', todayStr + 'T23:30'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); const todayTxt = await p.locator('#cust-list').textContent();
+  ok('C1: today shows visit', todayTxt.includes('ביקורים היום · 1') || todayTxt.includes('ביקורים היום'), todayTxt.slice(0, 120));
+  ok('C4: navigate link (Waze)', (await p.locator('#cust-list a[href^="https://waze.com/ul"]').count()) >= 1);
+  ok('C5: day summary line', /\d+ ביקורים · \d+ הצעות נשלחו/.test(todayTxt));
+  await p.click('#plus'); await p.click('#sheet-wrap [data-new="task"]'); const TK = 'e2e משימה ' + TAG; await p.fill('#tk-title', TK); await p.fill('#tk-due', todayStr); await p.click('#tk-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  ok('C2: task listed today', (await p.locator('#cust-list').textContent()).includes(TK));
+  await p.click('[data-open="calendar"]'); await p.waitForSelector('#v-calendar:not([hidden])'); const cal = await p.locator('#v-calendar').textContent();
+  ok('C3: calendar shows visit + task on today', cal.includes(N3) && cal.includes(TK) && (await p.locator('#v-calendar a[href^="https://calendar.google.com"]').count()) >= 1);
+  await p.click('[data-act="cal-next"]'); ok('C3: next week has no task', !(await p.locator('#v-calendar').textContent()).includes(TK));
+  await p.click('#v-calendar [data-back]'); await p.waitForSelector('#v-customers:not([hidden])');
+  await p.click(`#cust-list .row[data-task]:has-text("${TK}") [data-task-done]`); await p.waitForFunction((tk) => !document.querySelector('#cust-list').textContent.includes(tk), TK, { timeout: 5000 }).catch(() => {}); ok('C2: task done disappears', !(await p.locator('#cust-list').textContent()).includes(TK));
   await settle(p);
 
   await ctx.close(); await b.close();

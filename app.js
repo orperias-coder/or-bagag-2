@@ -15,7 +15,7 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], settings: null, uid: null, loadedAt: 0 };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], settings: null, uid: null, loadedAt: 0 };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
@@ -27,7 +27,7 @@ const mediaOf = (jid) => live(D.media).filter((m) => m.job_id === jid);
 const custOf = (id) => D.customers.find((c) => c.id === id);
 
 // ---------- ניווט ----------
-const S = { view: 'customers', stack: [], tab: 'customers', q: '' };
+const S = { view: 'today', stack: [], tab: 'today', q: '' };
 function show(view, params, fromPop) {
   if (view !== S.view || JSON.stringify(params) !== JSON.stringify(S.params)) S.stack.push({ view: S.view, params: S.params });
   S.view = view; S.params = params || {};
@@ -38,16 +38,16 @@ function show(view, params, fromPop) {
 function back(fromPop) {
   if ($('#sheet-wrap')) { closeSheet(); return; }
   if (!fromPop && history.state && history.state.ob2 > 0) { history.back(); return; }   // popstate מבצע את החזרה (פעם אחת)
-  const p = S.stack.pop(); if (!p) { S.view = 'customers'; S.params = {}; render(); return; }
+  const p = S.stack.pop(); if (!p) { S.view = 'today'; S.params = {}; render(); return; }
   S.view = p.view; S.params = p.params || {}; render();
 }
 window.addEventListener('popstate', () => { if (S.stack.length || $('#sheet-wrap')) back(true); });
 try { history.replaceState({ ob2: 0 }, ''); } catch (e) {}
 function render() {
   document.querySelectorAll('.view').forEach((v) => v.hidden = true);
-  const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
-  (map[S.view] || renderCustomers)(); renderAlerts();
-  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customer: 'customers', job: 'customers', quote: 'customers', print: 'customers', trash: 'more', settings: 'more', catalog: 'more' }[S.view] || S.view)));
+  const map = { today: renderToday, calendar: renderCalendar, customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
+  (map[S.view] || renderToday)(); renderAlerts();
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customers: 'today', calendar: 'today', customer: 'today', job: 'today', quote: 'today', print: 'today', trash: 'more', settings: 'more', catalog: 'more' }[S.view] || S.view)));
 }
 
 // ---------- מסכים ----------
@@ -56,6 +56,50 @@ function custRow(c) {
   const sub = [c.phone, c.address].filter(Boolean).join(' · ');
   const chip = top ? `<span class="chip ${top.stage}">${STAGE_HE[top.stage]}</span>` : '';
   return `<div class="row" data-cust="${c.id}"><div class="avatar">${esc((c.name || '?').trim()[0] || '?')}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(sub) || '&nbsp;'}</div></div>${chip}</div>`;
+}
+const dayKey = (t) => { const d = new Date(t); return isNaN(d) ? '' : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const timeHe = (t) => new Date(t).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+const navLink = (addr) => addr ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes" onclick="event.stopPropagation()">נווט</a>` : '';
+const gcalLink = (j, c) => { const s = new Date(j.visit_at), e = new Date(s.getTime() + 36e5), f = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + 'T' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '00';
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('ביקור: ' + (c.name || ''))}&dates=${f(s)}/${f(e)}&location=${encodeURIComponent(c.address || '')}&details=${encodeURIComponent(j.title || '')}`; };
+const visitRow = (j, gcal) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${timeHe(j.visit_at)}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(c.address || j.title || '')}</div></div>${navLink(c.address)}${gcal ? `<a class="btn sm ghost" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${gcalLink(j, c)}" onclick="event.stopPropagation()">ליומן גוגל</a>` : ''}</div>`; };
+const openTasks = () => live(D.tasks).filter((t) => !t.done_at).sort((a, b) => (a.due || '9') < (b.due || '9') ? -1 : 1);
+const taskRow = (t, today) => `<div class="row" data-task="${t.id}"><button class="btn sm ghost" data-task-done="${t.id}" aria-label="בוצע" style="flex:none;width:34px;height:34px;border-radius:50%;padding:0">✓</button><div class="main"><div class="name">${esc(t.title)}</div><div class="sub">${t.due ? (t.due < today ? `<b style="color:var(--red)">באיחור · ${dateHe(t.due)}</b>` : t.due === today ? 'היום' : dateHe(t.due)) : ''}${t.job_id ? ' · ' + esc(custOf((D.jobs.find((j) => j.id === t.job_id) || {}).customer_id)?.name || '') : ''}</div></div></div>`;
+function renderToday() {   // הלשונית הראשונה: מה יש היום. חיפוש בראש המסך פותח את רשימת הלקוחות.
+  const v = $('#v-customers'); v.hidden = false; const today = dayKey(Date.now());
+  const open = live(D.jobs).filter((j) => !['paid', 'lost'].includes(j.stage));
+  const visits = open.filter((j) => j.visit_at && dayKey(j.visit_at) === today).sort((a, b) => new Date(a.visit_at) - new Date(b.visit_at));
+  const soon = open.filter((j) => j.visit_at && dayKey(j.visit_at) > today && (new Date(j.visit_at) - Date.now()) < 7 * 864e5).sort((a, b) => new Date(a.visit_at) - new Date(b.visit_at));
+  const doing = open.filter((j) => j.stage === 'doing');
+  const waiting = open.filter((j) => j.stage === 'sent' && daysSince(j.quote_sent_at) >= 3);
+  const needQuote = open.filter((j) => j.stage === 'visit' && j.visit_at && (Date.now() - new Date(j.visit_at)) > 864e5 && !quotesOf(j.id).length);
+  const tasks = openTasks(), due = tasks.filter((t) => !t.due || t.due <= today), later = tasks.filter((t) => t.due && t.due > today);
+  const sentToday = live(D.quotes).filter((q) => q.sent_at && dayKey(q.sent_at) === today).length, paidToday = live(D.payments).filter((p) => p.paid_at && dayKey(p.paid_at) === today).reduce((a, p) => a + Number(p.amount || 0), 0);
+  const jobRow = (j) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || c.address || '')}</div></div><span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`; };
+  $('#cust-list').innerHTML = `<div class="card"><b>${new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}</b><div class="dim">${visits.length} ביקורים · ${sentToday} הצעות נשלחו · ${money(paidToday) || '0 ₪'} נכנסו</div>
+  <div class="actions"><button class="btn sm" data-open="calendar">יומן</button><button class="btn sm" data-new="task">משימה</button><button class="btn sm ghost" data-act="all-customers">כל הלקוחות · ${live(D.customers).length}</button></div></div>
+  ${visits.length ? `<div class="section">ביקורים היום · ${visits.length}</div>` + visits.map((j) => visitRow(j)).join('') : ''}
+  ${due.length ? `<div class="section">משימות · ${due.length}</div>` + due.map((t) => taskRow(t, today)).join('') : ''}
+  ${doing.length ? `<div class="section">בביצוע · ${doing.length}</div>` + doing.map(jobRow).join('') : ''}
+  ${waiting.length ? `<div class="section">מחכות לתשובה · ${waiting.length}</div>` + waiting.slice(0, 5).map(jobRow).join('') : ''}
+  ${needQuote.length ? `<div class="section">ממתינות להצעה · ${needQuote.length}</div>` + needQuote.slice(0, 5).map(jobRow).join('') : ''}
+  ${soon.length ? `<div class="section">ביקורים קרובים</div>` + soon.slice(0, 7).map((j) => `<div class="row" data-job="${j.id}"><div class="avatar" style="font-size:12px">${dateHe(j.visit_at).slice(0, 5)}</div><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${timeHe(j.visit_at)} · ${esc(custOf(j.customer_id)?.address || '')}</div></div></div>`).join('') : ''}
+  ${later.length ? `<div class="section">משימות בהמשך · ${later.length}</div>` + later.slice(0, 5).map((t) => taskRow(t, today)).join('') : ''}
+  ${!visits.length && !due.length && !doing.length && !waiting.length && !needQuote.length ? '<div class="empty">יום שקט. הקלד למעלה כדי למצוא לקוח, או + להוסיף.</div>' : ''}`;
+}
+function renderCalendar() {   // שבוע: ביקורים ומשימות לפי יום, עם "ליומן גוגל"
+  const v = $('#v-calendar'); v.hidden = false; const off = Number(S.params.week || 0); const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - start.getDay() + off * 7);
+  const today = dayKey(Date.now()); const open = live(D.jobs).filter((j) => !['paid', 'lost'].includes(j.stage)); const tasks = openTasks();
+  const days = [...Array(7)].map((_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  v.innerHTML = `<div class="bar"><button class="btn sm" data-back>חזרה</button><b>${dateHe(days[0])} – ${dateHe(days[6])}</b><span><button class="btn sm ghost" data-act="cal-prev">‹ שבוע</button> <button class="btn sm ghost" data-act="cal-next">שבוע ›</button></span></div>` + days.map((d) => { const k = dayKey(d);
+    const vs = open.filter((j) => j.visit_at && dayKey(j.visit_at) === k).sort((a, b) => new Date(a.visit_at) - new Date(b.visit_at)), ts = tasks.filter((t) => t.due === k);
+    return `<div class="section" ${k === today ? 'style="color:var(--acc)"' : ''}>${d.toLocaleDateString('he-IL', { weekday: 'long' })} ${dateHe(d)}${k === today ? ' · היום' : ''}</div>${vs.map((j) => visitRow(j, true)).join('')}${ts.map((t) => taskRow(t, today)).join('')}${!vs.length && !ts.length ? '<div class="dim" style="padding:2px 12px 6px">—</div>' : ''}`; }).join('');
+}
+function openTaskForm(t, jobId) {
+  const w = sheet('t-task-form'); if (t) { $('#tk-title', w).value = t.title; $('#tk-due', w).value = t.due || ''; $('#tk-del', w).hidden = false; }
+  $('#tk-save', w).onclick = async () => { const title = $('#tk-title', w).value.trim(); if (!title) return toast('מה המשימה?'); await DB.save('tasks', { ...(t ? { id: t.id } : { job_id: jobId || null }), title, due: $('#tk-due', w).value || null }); closeSheet(); render(); toast('נשמר'); };
+  $('#tk-del', w).onclick = async () => { await DB.trash('tasks', t.id); closeSheet(); render(); toast('הועבר לסל'); };
+  setTimeout(() => $('#tk-title', w).focus(), 50);
 }
 function renderCustomers() {
   const v = $('#v-customers'); v.hidden = false;
@@ -294,7 +338,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
   try { DB.used(t.dataset.act || (t.dataset.tab && 'tab:' + t.dataset.tab) || (t.dataset.stage && 'stage:' + t.dataset.stage) || (t.dataset.new && 'new:' + t.dataset.new) || t.id || 'row'); } catch (e) {}
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
@@ -304,6 +348,12 @@ document.addEventListener('click', async (e) => {
   else if (t.hasAttribute('data-back')) back();
   else if (t.dataset.tab) { S.stack = []; S.q = ''; $('#search').value = ''; S.view = t.dataset.tab; S.params = {}; try { history.replaceState({ ob2: 0 }, ''); } catch (e) {} render(); window.scrollTo(0, 0); }
   else if (t.id === 'plus') sheet('t-plus');
+  else if (t.dataset.new === 'task') openTaskForm(null, job && job.id);
+  else if (t.dataset.taskDone) { await DB.save('tasks', { id: t.dataset.taskDone, done_at: new Date().toISOString() }); render(); toast('בוצע'); }
+  else if (t.dataset.task) { const tk = D.tasks.find((x) => x.id === t.dataset.task); if (tk) openTaskForm(tk); }
+  else if (t.dataset.act === 'all-customers') { S.stack = []; S.view = 'customers'; render(); }
+  else if (t.dataset.open === 'calendar') show('calendar', { week: 0 });
+  else if (t.dataset.act === 'cal-prev' || t.dataset.act === 'cal-next') { S.params = { week: Number(S.params.week || 0) + (t.dataset.act === 'cal-next' ? 1 : -1) }; render(); }
   else if (t.dataset.new === 'customer') openCustomerForm();
   else if (t.dataset.new === 'job') pickCustomer((cid) => openJobForm(cid));
   else if (t.dataset.act === 'edit-customer' && cur) openCustomerForm(cur);
@@ -347,7 +397,7 @@ $('#photo-in').addEventListener('change', async (e) => {
   render(); toast(navigator.onLine ? 'התמונות נשמרו' : 'נשמרו במכשיר — יעלו כשתהיה רשת');
 });
 $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') e.currentTarget.hidden = true; });
-$('#search').addEventListener('input', (e) => { S.q = e.target.value; if (!['customers', 'work'].includes(S.view)) { S.stack = []; S.view = 'customers'; } render(); });
+$('#search').addEventListener('input', (e) => { S.q = e.target.value; if (!['customers', 'work'].includes(S.view)) { S.stack = []; S.view = 'customers'; } render(); });   // הקלדה מכל מקום = חיפוש לקוחות
 $('#li-go').addEventListener('click', login);
 $('#li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
 async function login() {

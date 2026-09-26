@@ -36,6 +36,7 @@
       <div class="list" id="cust-list"></div>
     </section>
     <section id="v-customer" class="view" hidden></section>
+    <section id="v-calendar" class="view" hidden></section>
     <section id="v-job" class="view" hidden></section>
     <section id="v-money" class="view" hidden></section>
     <section id="v-more" class="view" hidden></section>
@@ -47,7 +48,7 @@
   </main>
 
   <nav id="tabs" hidden>
-    <button data-tab="customers" class="on"><span class="ico">👥</span>לקוחות</button>
+    <button data-tab="today" class="on"><span class="ico">☀</span>היום</button>
     <button data-tab="work"><span class="ico">🏠</span>עבודות</button>
     <button id="plus" aria-label="חדש">+</button>
     <button data-tab="money"><span class="ico">₪</span>כסף</button>
@@ -59,7 +60,8 @@
 <div class="row2"><label style="flex:1">סוג גג<select id="f-tiles"><option value="">—</option><option>רעפים</option><option>פח</option><option>בטון שטוח</option><option>פנלים</option><option>אחר</option></select></label><label style="flex:1">גישה<select id="f-access"><option value="">—</option><option>סולם</option><option>סולם גבוה</option><option>במה</option><option>מדרגות</option></select></label></div>
 <div class="row2"><label style="flex:1">שיפוע<select id="f-slope"><option value="">—</option><option>מתון</option><option>בינוני</option><option>תלול</option></select></label><label style="flex:1">קומות<input id="f-floors" type="number" inputmode="numeric" dir="ltr"></label></div>
 <button class="btn pri" id="f-save">שמור</button></div></template>
-<template id="t-plus"><div class="sheet"><div class="sheet-h"><b>מה להוסיף?</b><button class="btn sm ghost" data-close>סגור</button></div><button class="btn" data-new="customer">לקוח חדש</button><button class="btn" data-new="job">עבודה ללקוח קיים</button></div></template>
+<template id="t-plus"><div class="sheet"><div class="sheet-h"><b>מה להוסיף?</b><button class="btn sm ghost" data-close>סגור</button></div><button class="btn" data-new="customer">לקוח חדש</button><button class="btn" data-new="job">עבודה ללקוח קיים</button><button class="btn" data-new="task">משימה</button></div></template>
+<template id="t-task-form"><div class="sheet"><div class="sheet-h"><b>משימה</b><button class="btn sm ghost" data-close>סגור</button></div><label>מה לעשות<input id="tk-title" autocomplete="off" placeholder="למשל: להביא חומר ליועצת מס"></label><label>עד מתי<input id="tk-due" type="date" dir="ltr"></label><div class="row2"><button class="btn pri" id="tk-save">שמור</button><button class="btn ghost" id="tk-del" hidden>לסל</button></div></div></template>
 <template id="t-job-form"><div class="sheet"><div class="sheet-h"><b>עבודה חדשה</b><button class="btn sm ghost" data-close>סגור</button></div>
 <label>שם העבודה (למשל: נזילה ברוכבים)<input id="j-title" autocomplete="off"></label><label>מה הלקוח תיאר<textarea id="j-problem" rows="2"></textarea></label><label>מועד ביקור (אם נקבע)<input id="j-visit" type="datetime-local"></label>
 <button class="btn pri" id="j-save">שמור</button></div></template>
