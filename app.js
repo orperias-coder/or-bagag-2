@@ -61,12 +61,16 @@ function renderWork() {
   const v = $('#v-customers'); v.hidden = false;
   const q = S.q.trim().toLowerCase();
   const open = live(D.jobs).filter((j) => !['paid', 'lost'].includes(j.stage));
-  const groups = STAGES.filter((s) => s !== 'paid').map((s) => [s, open.filter((j) => j.stage === s)]).filter(([, a]) => a.length);
-  $('#cust-list').innerHTML = groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
+  const waiting = open.filter((j) => j.stage === 'sent' && daysSince(j.quote_sent_at) >= 3).sort((a, b) => new Date(a.quote_sent_at) - new Date(b.quote_sent_at));
+  const wHtml = waiting.length ? `<div class="section">מחכות לתשובה · ${waiting.length}</div>` + waiting.map((j) => { const c = custOf(j.customer_id) || {}; const d = daysSince(j.quote_sent_at);
+    return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || '')}${d >= 7 ? ' · <b style="color:var(--red)">תזכורת אחרונה</b>' : ''}</div></div><span class="chip days ${d >= 7 ? 'last' : ''}">${d} ימים</span>${c.phone ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}" onclick="event.stopPropagation()">וואטסאפ</a>` : ''}</div>`; }).join('') : '';
+  const rest = open.filter((j) => !waiting.includes(j));
+  const groups = STAGES.filter((s) => s !== 'paid').map((s) => [s, rest.filter((j) => j.stage === s)]).filter(([, a]) => a.length);
+  $('#cust-list').innerHTML = wHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
     const c = custOf(j.customer_id) || {}; if (q && !(c.name || '').toLowerCase().includes(q)) return '';
     const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || c.address || '')}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}</div>`;
-  }).join('')).join('') || '<div class="empty">אין עבודות פתוחות</div>';
+  }).join('')).join('') || (wHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
 }
 function renderCustomer() {
   const v = $('#v-customer'); v.hidden = false;
@@ -94,7 +98,7 @@ function renderJob() {
   <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${esc(j.title || 'עבודה')}</h2><span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>
   <div class="stages">${STAGES.map((s, i) => `<span class="${i <= idx ? 'done' : ''}" title="${STAGE_HE[s]}"></span>`).join('')}</div>
   <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
-  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}${j.visit_notes ? `<div style="margin-top:8px;white-space:pre-line"><b>מהביקור:</b> ${esc(j.visit_notes)}</div>` : ''}</div>
+  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}${j.visit_notes ? `<div style="margin-top:8px;white-space:pre-line"><b>מהביקור:</b> ${esc(j.visit_notes)}</div>` : ''}<div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
   ${qs.length ? `<div class="section">הצעות מחיר</div>` + qs.map(quoteBlock).join('') : ''}
   ${(j.price_agreed || ps.length) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ' · <b style="color:var(--warn)">בלי חשבונית</b>'}</span><b>${money(p.amount)}</b></div>`).join('')}</div>` : ''}
@@ -137,7 +141,19 @@ function pickCustomer(cb) {
   draw(''); $('#pick-search', w).oninput = (e) => draw(e.target.value.trim());
   list.onclick = (e) => { const r = e.target.closest('[data-pick]'); if (r) { closeSheet(); cb(r.dataset.pick); } };
 }
-function openJobForm(customerId) { toast('עבודה חדשה — במשימה הבאה'); }
+function openJobForm(customerId) {
+  const w = sheet('t-job-form');
+  $('#j-save', w).onclick = async () => {
+    const title = $('#j-title', w).value.trim(), visit = $('#j-visit', w).value;
+    const row = await DB.save('jobs', { customer_id: customerId, title: title || null, problem: $('#j-problem', w).value.trim() || null, visit_at: visit ? new Date(visit).toISOString() : null, stage: visit ? 'visit' : 'lead', stage_changed_at: new Date().toISOString() });
+    closeSheet(); show('job', { id: row.id }); toast('נשמר');
+  };
+  setTimeout(() => $('#j-title', w).focus(), 50);
+}
+const NEXT = { lead: ['visit', 'quote'], visit: ['quote'], quote: ['sent'], sent: ['approved', 'lost'], approved: ['doing'], doing: ['paid'], paid: [], lost: ['lead'] };
+const NEXT_HE = { visit: 'נקבע ביקור', quote: 'בונים הצעה', sent: 'נשלחה ללקוח', approved: 'הלקוח אישר', doing: 'התחלנו', paid: 'שולם וסגור', lost: 'לא יצא', lead: 'לפתוח מחדש' };
+const WA_FOLLOWUP = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
+const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
 function renderTrash() {
   const v = $('#v-trash'); v.hidden = false;
   const rows = [['customers', 'לקוח', D.customers.filter((c) => c.deleted_at).map((c) => [c, c.name])], ['jobs', 'עבודה', D.jobs.filter((j) => j.deleted_at).map((j) => [j, (j.title || 'עבודה') + ' · ' + (custOf(j.customer_id)?.name || '')])], ['quotes', 'הצעה', D.quotes.filter((q) => q.deleted_at).map((q) => [q, 'הצעה ' + (q.number || '') + ' · ' + (custOf((D.jobs.find((j) => j.id === q.job_id) || {}).customer_id)?.name || '')])]];
@@ -148,9 +164,10 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],#plus,#refresh,#logout');
   if (!t) return;
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
+  const job = S.view === 'job' ? live(D.jobs).find((x) => x.id === S.params.id) : null;
   if (t.dataset.cust) show('customer', { id: t.dataset.cust });
   else if (t.dataset.job) show('job', { id: t.dataset.job });
   else if (t.hasAttribute('data-back')) back();
@@ -161,6 +178,8 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'edit-customer' && cur) openCustomerForm(cur);
   else if (t.dataset.act === 'new-job' && cur) openJobForm(cur.id);
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
+  else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה'); await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
+  else if (t.dataset.act === 'trash-job' && job) confirmAsk('להעביר את העבודה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('jobs', job.id); back(); toast('הועבר לסל'); });
   else if (t.dataset.open === 'trash') show('trash');
   else if (t.dataset.restore) { const [tb, id] = t.dataset.restore.split(':'); await DB.restore(tb, id); if (tb === 'customers') for (const j of D.jobs.filter((j) => j.customer_id === id && j.deleted_at)) await DB.restore('jobs', j.id); render(); toast('שוחזר'); }
   else if (t.id === 'refresh') { toast('טוען…'); await DB.loadAll(); render(); toast('עודכן'); }

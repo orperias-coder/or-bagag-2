@@ -84,3 +84,4 @@ button,input{font-family:inherit;font-size:inherit}
 .sheet textarea{height:auto;padding:10px 12px;resize:vertical}
 .row2{display:flex;gap:8px;flex-wrap:wrap}.row2 .btn{flex:1}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip.days.last{background:var(--red-l);color:var(--red)}
