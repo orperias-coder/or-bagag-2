@@ -80,7 +80,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.fill('#f-name', N2); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
   await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e ביקור'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4AWP4z8DwHwyBNBAAAP4dA/0Xm0J3AAAAAElFTkSuQmCC', 'base64');
-  const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('[data-act="add-photos"]')]);
+  const [fc] = await Promise.all([p.waitForEvent('filechooser'), (async () => { await p.click('[data-act="add-photos"]'); await p.click('[data-kind="roof"]'); })()]);
   await fc.setFiles([1, 2, 3].map((i) => ({ name: `p${i}.png`, mimeType: 'image/png', buffer: png })));
   await p.waitForFunction(() => document.querySelectorAll('#v-job .thumbs .th').length === 3, null, { timeout: 15000 });
   ok('S1: 3 thumbs offline, marked pending', (await p.locator('#v-job .thumbs .th.pending').count()) === 3);
@@ -182,6 +182,26 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   // (5) כפתור-אחורה של הדפדפן חוזר מסך אחד
   await p.goBack(); await p.waitForTimeout(200); ok('adv: browser back → job screen', (await p.locator('#v-job:not([hidden])').count()) === 1, 'view=' + await p.evaluate(() => S.view));
   await p.goBack(); await p.waitForTimeout(200); ok('adv: browser back → customer screen', (await p.evaluate(() => S.view)) === 'customer');
+  await settle(p);
+
+  // ---- גל 2 א': ממצא → סעיף; תיוג תמונות; פרופיל גג; ממתינות להצעה ----
+  const N3 = 'e2e ממצאים ' + String(Date.now()).slice(-5);
+  await p.click('#tabs [data-tab="customers"]'); await p.click('#plus'); await p.click('[data-new="customer"]'); await p.fill('#f-name', N3); await p.selectOption('#f-tiles', 'רעפים'); await p.selectOption('#f-access', 'סולם גבוה'); await p.fill('#f-floors', '2'); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
+  ok('A3: roof profile shown on card', (await p.locator('#v-customer').textContent()).includes('רעפים · סולם גבוה · 2 קומות'));
+  await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e ממצאים'); await p.fill('#j-visit', '2026-09-20T09:00'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  ok('A4: voice button exists', (await p.locator('#voice-btn').count()) === 1);
+  await p.click('[data-act="new-finding"]'); await p.fill('#fi-title', 'רוכבים סדוקים'); await p.fill('#fi-qty', '11'); await p.fill('#fi-unit', 'מטר'); await p.fill('#fi-ppu', '300'); await p.click('#fi-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  await p.click('[data-act="new-finding"]'); await p.click('#fi-cat'); await p.waitForSelector('#cat-list .row'); await p.click('#cat-list .row'); await p.waitForSelector('#fi-title'); await p.fill('#fi-qty', '3'); await p.click('#fi-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  ok('A1: two findings listed', (await p.locator('#v-job [data-finding]').count()) === 2);
+  await p.click('#tabs [data-tab="work"]'); ok('A5: waiting-for-quote section', (await p.locator('#cust-list').textContent()).includes('ממתינות להצעה'));
+  await p.click(`#cust-list .row[data-job]:has-text("${N3}")`); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('[data-act="new-quote"]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  const qt = await p.evaluate(() => Q.cur(S.params.id));
+  ok('A1: quote pre-filled from findings (11 × 300 = 3,300)', qt.items.length === 2 && qt.items[0].qty === 11 && qt.items[0].total === 3300, JSON.stringify(qt.items.map((i) => [i.title, i.qty, i.total])));
+  await p.click('#v-quote [data-back]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  const [fc2] = await Promise.all([p.waitForEvent('filechooser'), (async () => { await p.click('[data-act="add-photos"]'); await p.click('[data-kind="interior"]'); })()]);
+  await fc2.setFiles([{ name: 'wet.png', mimeType: 'image/png', buffer: png }]); await p.waitForFunction(() => document.querySelectorAll('#v-job .thumbs .th').length === 1);
+  ok('A2: photo grouped under its tag', (await p.locator('#v-job').textContent()).includes('רטיבות בפנים · 1'));
   await settle(p);
 
   await ctx.close(); await b.close();

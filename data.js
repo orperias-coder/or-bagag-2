@@ -101,7 +101,7 @@ const DB = (() => {
   async function loadAll() {
     const { data: { user } } = await sb.auth.getUser(); D.uid = user && user.id;
     const sel = { customers: '*', jobs: '*', quotes: '*', quote_versions: 'id,quote_id,version,snapshot,created_at', payments: '*',
-      media: 'id,job_id,customer_id,kind,storage_path,thumb_data,taken_at,caption,created_at,updated_at,deleted_at', alerts: '*' };
+      media: 'id,job_id,customer_id,kind,tag,storage_path,thumb_data,taken_at,caption,created_at,updated_at,deleted_at', alerts: '*' };
     const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'alerts' ? 'at' : t === 'quote_versions' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
     for (const [t, r] of res) { if (r.error) { if (t === 'alerts') { D.alerts = []; continue; } throw r.error; } D[t] = r.data; }
     const st = await sb.from('settings').select('*').maybeSingle(); if (!st.error && st.data) D.settings = st.data;
@@ -120,6 +120,18 @@ const DB = (() => {
     return row;
   }
   async function photoUrl(path) { const { data } = await sb.storage.from('app2-media').createSignedUrl(path, 3600); return data && data.signedUrl; }
+  // ---- ספירת-שימוש: כל פעולה נספרת מקומית ונשלחת פעם ביום (לפי מכשיר) ----
+  const USE_KEY = 'ob2_usage';
+  function used(key) { try { const u = JSON.parse(localStorage.getItem(USE_KEY) || '{}'); const day = new Date().toISOString().slice(0, 10); u[day] = u[day] || {}; u[day][key] = (u[day][key] || 0) + 1; localStorage.setItem(USE_KEY, JSON.stringify(u)); } catch (e) {} }
+  async function flushUsage() {
+    if (!navigator.onLine || !D.uid) return; let u; try { u = JSON.parse(localStorage.getItem(USE_KEY) || '{}'); } catch (e) { return; }
+    const today = new Date().toISOString().slice(0, 10); const rows = [];
+    for (const day of Object.keys(u)) for (const key of Object.keys(u[day])) rows.push({ user_id: D.uid, device: DEVICE, key, day, count: u[day][key] });
+    if (!rows.length) return;
+    const { error } = await sb.from('usage').upsert(rows, { onConflict: 'user_id,device,key,day' });
+    if (!error) { const keep = { [today]: u[today] || {} }; localStorage.setItem(USE_KEY, JSON.stringify(keep)); }
+  }
+  setInterval(flushUsage, 10 * 60 * 1000); setTimeout(flushUsage, 15000);
   refreshPending();
-  return { save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid, _queue: qAll, _failed: fAll, _send: send };
+  return { used, flushUsage, save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid, _queue: qAll, _failed: fAll, _send: send };
 })();

@@ -72,20 +72,23 @@ function renderWork() {
   const waiting = open.filter((j) => j.stage === 'sent' && daysSince(j.quote_sent_at) >= 3).sort((a, b) => new Date(a.quote_sent_at) - new Date(b.quote_sent_at));
   const wHtml = waiting.length ? `<div class="section">מחכות לתשובה · ${waiting.length}</div>` + waiting.map((j) => { const c = custOf(j.customer_id) || {}; const d = daysSince(j.quote_sent_at);
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || '')}${d >= 7 ? ' · <b style="color:var(--red)">תזכורת אחרונה</b>' : ''}</div></div><span class="chip days ${d >= 7 ? 'last' : ''}">${d} ימים</span>${c.phone ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}" onclick="event.stopPropagation()">וואטסאפ</a>` : ''}</div>`; }).join('') : '';
-  const rest = open.filter((j) => !waiting.includes(j));
+  const needQuote = open.filter((j) => j.stage === 'visit' && j.visit_at && (Date.now() - new Date(j.visit_at)) > 864e5 && !quotesOf(j.id).length);
+  const nqHtml = needQuote.length ? `<div class="section">ממתינות להצעה · ${needQuote.length}</div>` + needQuote.map((j) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">ביקור ${dateHe(j.visit_at)} · ${(j.findings || []).length} ממצאים</div></div><span class="chip days">${daysSince(j.visit_at)} ימים</span></div>`; }).join('') : '';
+  const rest = open.filter((j) => !waiting.includes(j) && !needQuote.includes(j));
   const groups = STAGES.filter((s) => s !== 'paid').map((s) => [s, rest.filter((j) => j.stage === s)]).filter(([, a]) => a.length);
-  $('#cust-list').innerHTML = wHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
+  $('#cust-list').innerHTML = wHtml + nqHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
     const c = custOf(j.customer_id) || {}; if (q && !(c.name || '').toLowerCase().includes(q)) return '';
     const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || c.address || '')}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}</div>`;
-  }).join('')).join('') || (wHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
+  }).join('')).join('') || (wHtml || nqHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
 }
+const roofLine = (c) => c && c.roof ? [c.roof.tiles, c.roof.access, c.roof.slope, c.roof.floors ? c.roof.floors + ' קומות' : ''].filter(Boolean).map(esc).join(' · ') : '';
 function renderCustomer() {
   const v = $('#v-customer'); v.hidden = false;
   const c = custOf(S.params.id); if (!c) return v.innerHTML = '<div class="empty">לקוח לא נמצא</div>';
   const js = jobsOf(c.id);
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button>
-  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="https://wa.me/972${esc(String(c.phone).replace(/\D/g, '').replace(/^0/, ''))}" target="_blank">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}<div class="actions"><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
+  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="https://wa.me/972${esc(String(c.phone).replace(/\D/g, '').replace(/^0/, ''))}" target="_blank">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}<div class="actions"><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
   <div class="section">עבודות · ${js.length}</div>
   <div class="list">${js.map((j) => { const qs = quotesOf(j.id); const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(j.title || (qs[0] && qs[0].items && qs[0].items[0] && qs[0].items[0].title) || 'עבודה')}</div><div class="sub">${dateHe(j.created_at)}${qs.length ? ' · ' + qs.length + ' הצעות' : ''}${j.price_agreed ? ' · ' + money(j.price_agreed) : ''}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}<span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`; }).join('') || '<div class="empty">אין עבודות</div>'}</div>`;
@@ -105,13 +108,14 @@ function renderJob() {
   v.innerHTML = `<button class="back" data-back>‹ ${esc(c.name || 'חזרה')}</button>
   <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${esc(j.title || 'עבודה')}</h2><span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>
   <div class="stages">${STAGES.map((s, i) => `<span class="${i <= idx ? 'done' : ''}" title="${STAGE_HE[s]}"></span>`).join('')}</div>
-  <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
-  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
+  <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${roofLine(c) ? `<span>גג: ${roofLine(c)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
+  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><button class="btn sm" data-act="voice" id="voice-btn">הקלטה</button></div><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
+  <div class="section">ממצאים מהגג · ${(j.findings || []).length}</div><div class="card">${(j.findings || []).map((f, n) => { const m = f.media_id && D.media.find((x) => x.id === f.media_id); return `<div class="qitem" data-finding="${n}" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:center;min-width:0">${m && m.thumb_data ? `<img src="${m.thumb_data}" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">` : ''}<div><div class="t">${esc(f.title)}</div><div class="dim">${f.qty} ${esc(f.unit || '')}${f.price_per_unit ? ' × ' + money(f.price_per_unit) : ''}</div></div></div><b>${f.price_per_unit ? money(f.qty * f.price_per_unit) : ''}</b></div>`; }).join('') || '<div class="dim">על הגג: כל ממצא עם תמונה וכמות, וההצעה בערב כבר מלאה.</div>'}<div class="actions"><button class="btn sm pri" data-act="new-finding">ממצא חדש</button>${(j.findings || []).length ? '<button class="btn sm ghost" data-act="clear-findings">נקה ממצאים</button>' : ''}</div></div>
   <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
   ${(j.price_agreed || ps.length || ['approved', 'doing', 'paid'].includes(j.stage)) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-inv="${p.id}">הוצאתי חשבונית</button>`}</span><b>${money(p.amount)}</b></div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="add-payment">רשום תשלום</button></div></div>` : ''}
   </div><div>
-  <div class="section">תמונות · ${ms.length}</div><div class="card"><div class="thumbs">${ms.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div><div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
+  <div class="section">תמונות · ${ms.length}</div><div class="card">${[['roof', 'גג'], ['outside', 'חוץ'], ['interior', 'רטיבות בפנים'], ['', 'אחר']].map(([k, he]) => { const g = ms.filter((m) => (m.tag || '') === k); return g.length ? `<div class="dim" style="margin:6px 0 4px">${he} · ${g.length}</div><div class="thumbs">${g.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div>` : ''; }).join('')}<div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
   </div></div>`;
   bindJobNotes(j);
 }
@@ -124,7 +128,7 @@ async function openMedia(id) {
   const m = D.media.find((x) => x.id === id); if (!m) return;
   if (!m.storage_path) return toast('התמונה עדיין לא עלתה לענן — תיפתח כשתהיה רשת');
   const url = await DB.photoUrl(m.storage_path); if (!url) return toast('לא הצלחתי לפתוח את התמונה');
-  const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.hidden = false;
+  const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.dataset.media = id; lb.querySelector('.lb-tags').innerHTML = [['roof', 'גג'], ['outside', 'חוץ'], ['interior', 'רטיבות בפנים'], ['', 'אחר']].map(([k, he]) => `<button class="btn sm ${(m.tag || '') === k ? 'pri' : ''}" data-tag="${k}">${he}</button>`).join(''); lb.hidden = false;
 }
 const BIZ_DEFAULT = { businessName: 'אור בגג', ownerName: 'אור פריאס', phone: '054-5725681', email: 'or.perias@gmail.com', taxId: '307951517' };
 const UNFORESEEN_DEFAULT = 'במידה ויתגלו במהלך העבודה כשלים, נזקים או צרכים שלא נצפו ואינם כלולים בהצעה זו — יינתן עבורם תמחור נפרד בתיאום מראש עם הלקוח.';
@@ -165,6 +169,35 @@ function openPaymentForm(job) {
     if (job.price_agreed && total >= job.price_agreed - 1 && job.stage !== 'paid') { await DB.stage(job.id, 'paid'); toast('שולם במלואו — העבודה נסגרה'); } else toast('התשלום נרשם');
     render();
   };
+}
+function openFindingForm(job, idx) {
+  const list = [...(job.findings || [])]; const f = idx != null ? { ...list[idx] } : { id: DB.uuid(), title: '', description: '', qty: 1, unit: '', price_per_unit: '', media_id: null, catalog_id: null, at: new Date().toISOString() };
+  const w = sheet('t-finding-form'); $('#fi-title', w).value = f.title; $('#fi-desc', w).value = f.description || ''; $('#fi-qty', w).value = f.qty; $('#fi-unit', w).value = f.unit || ''; $('#fi-ppu', w).value = f.price_per_unit || '';
+  const m = f.media_id && D.media.find((x) => x.id === f.media_id); if (m && m.thumb_data) { $('#fi-thumb', w).dataset.media = m.id; $('#fi-thumb', w).innerHTML = `<img src="${m.thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; }
+  $('#fi-photo', w).onclick = () => { const inp = $('#photo-in'); inp.dataset.forJob = job.id; inp.dataset.forCust = job.customer_id; inp.dataset.forTag = 'roof'; inp.dataset.forFinding = '1'; inp.removeAttribute('multiple'); inp.click(); setTimeout(() => inp.setAttribute('multiple', ''), 500); };
+  $('#fi-cat', w).onclick = () => { const cat = ((D.settings && D.settings.catalog) || []).filter((c) => !c.hidden); const cw = sheet('t-catalog'); const cl = $('#cat-list', cw);
+    const draw = (q) => { cl.innerHTML = cat.filter((c) => !q || (c.name || '').includes(q)).slice(0, 60).map((c) => `<div class="row" data-cat="${cat.indexOf(c)}"><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${money(c.price)}${c.unit ? ' / ' + esc(c.unit) : ''}</div></div></div>`).join(''); };
+    draw(''); $('#cat-search', cw).oninput = (e) => draw(e.target.value.trim());
+    cl.onclick = (e) => { const r = e.target.closest('[data-cat]'); if (!r) return; const c = cat[+r.dataset.cat]; f.catalog_id = c.legacy_id || null; const w2 = openFindingForm.reopen(); $('#fi-title', w2).value = c.name; $('#fi-desc', w2).value = c.description || ''; $('#fi-unit', w2).value = c.unit || ''; $('#fi-ppu', w2).value = c.price || ''; if (m && m.thumb_data) { $('#fi-thumb', w2).dataset.media = m.id; $('#fi-thumb', w2).innerHTML = `<img src="${m.thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; } }; };
+  openFindingForm.reopen = () => { const keep = { title: $('#fi-title') && $('#fi-title').value, desc: $('#fi-desc') && $('#fi-desc').value, qty: $('#fi-qty') && $('#fi-qty').value }; const w2 = openFindingForm(job, idx); if (keep.qty) $('#fi-qty', w2).value = keep.qty; return w2; };
+  $('#fi-save', w).onclick = async () => {
+    const qty = Number($('#fi-qty', w).value); if (!$('#fi-title', w).value.trim()) return toast('מה מצאת?'); if (!(qty > 0)) return toast('כמות גדולה מ-0');
+    const n = { ...f, title: $('#fi-title', w).value.trim(), description: $('#fi-desc', w).value.trim(), qty, unit: $('#fi-unit', w).value.trim(), price_per_unit: Number($('#fi-ppu', w).value) || 0, media_id: $('#fi-thumb', w).dataset.media || f.media_id || null };
+    if (idx != null) list[idx] = n; else list.push(n);
+    await DB.save('jobs', { id: job.id, findings: list }); if (['lead'].includes(job.stage)) await DB.stage(job.id, 'visit'); closeSheet(); render(); toast('ממצא נשמר');
+  };
+  setTimeout(() => $('#fi-title', w).focus(), 50); return w;
+}
+let _rec = null;
+function startVoice(job) {   // הקלטה → טקסט לתוך הערות-הביקור (Web Speech API של כרום, עברית)
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; const btn = $('#voice-btn');
+  if (!SR) return toast('הדפדפן הזה לא תומך בהקלטה לטקסט. בכרום באנדרואיד זה עובד.');
+  if (_rec) { _rec.stop(); return; }
+  const r = new SR(); r.lang = 'he-IL'; r.continuous = true; r.interimResults = false; _rec = r; btn.textContent = 'עצור הקלטה'; btn.classList.add('pri');
+  r.onresult = (ev) => { let txt = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) txt += ev.results[i][0].transcript + ' '; if (!txt.trim()) return; const ta = $('#j-notes'); ta.value = (ta.value.trim() + '\n' + txt.trim()).trim(); ta.dispatchEvent(new Event('input')); };
+  r.onerror = (ev) => { toast('ההקלטה נעצרה: ' + (ev.error === 'not-allowed' ? 'אין הרשאה למיקרופון' : ev.error)); };
+  r.onend = () => { _rec = null; const b = $('#voice-btn'); if (b) { b.textContent = 'הקלטה'; b.classList.remove('pri'); } const ta = $('#j-notes'); if (ta) ta.dispatchEvent(new Event('blur')); };
+  try { r.start(); toast('מקליט… דבר, ואז "עצור הקלטה"'); } catch (e) { _rec = null; toast('לא הצלחתי להתחיל הקלטה'); }
 }
 function renderMoney() {
   const v = $('#v-money'); v.hidden = false;
@@ -224,10 +257,10 @@ function closeSheet() { const w = $('#sheet-wrap'); if (w) w.remove(); }
 function confirmAsk(title, msg, cb) { const w = sheet('t-confirm'); $('#confirm-title', w).textContent = title; $('#confirm-msg', w).textContent = msg; $('#confirm-yes', w).onclick = () => { closeSheet(); cb(); }; }
 function openCustomerForm(c) {
   const w = sheet('t-customer-form');
-  if (c) { $('#f-title', w).textContent = 'עריכת לקוח'; $('#f-name', w).value = c.name || ''; $('#f-phone', w).value = c.phone || ''; $('#f-address', w).value = c.address || ''; $('#f-notes', w).value = c.notes || ''; }
+  if (c) { $('#f-title', w).textContent = 'עריכת לקוח'; $('#f-name', w).value = c.name || ''; $('#f-phone', w).value = c.phone || ''; $('#f-address', w).value = c.address || ''; $('#f-notes', w).value = c.notes || ''; const r = c.roof || {}; $('#f-tiles', w).value = r.tiles || ''; $('#f-access', w).value = r.access || ''; $('#f-slope', w).value = r.slope || ''; $('#f-floors', w).value = r.floors || ''; }
   $('#f-save', w).onclick = async () => {
     const name = $('#f-name', w).value.trim(); if (!name) return toast('צריך שם');
-    const row = await DB.save('customers', { ...(c ? { id: c.id } : {}), name, phone: $('#f-phone', w).value.trim() || null, address: $('#f-address', w).value.trim() || null, notes: $('#f-notes', w).value.trim() || null, source: c ? c.source : 'ידני' });
+    const row = await DB.save('customers', { ...(c ? { id: c.id } : {}), name, phone: $('#f-phone', w).value.trim() || null, address: $('#f-address', w).value.trim() || null, notes: $('#f-notes', w).value.trim() || null, source: c ? c.source : 'ידני', roof: { tiles: $('#f-tiles', w).value, access: $('#f-access', w).value, slope: $('#f-slope', w).value, floors: $('#f-floors', w).value ? Number($('#f-floors', w).value) : null } });
     closeSheet(); S.stack = []; show('customer', { id: row.id }); toast('נשמר');
   };
   setTimeout(() => $('#f-name', w).focus(), 50);
@@ -261,8 +294,9 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
+  try { DB.used(t.dataset.act || (t.dataset.tab && 'tab:' + t.dataset.tab) || (t.dataset.stage && 'stage:' + t.dataset.stage) || (t.dataset.new && 'new:' + t.dataset.new) || t.id || 'row'); } catch (e) {}
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
   const job = S.view === 'job' ? live(D.jobs).find((x) => x.id === S.params.id) : null;
   if (t.dataset.cust) show('customer', { id: t.dataset.cust });
@@ -281,7 +315,12 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'add-payment' && job) openPaymentForm(job);
   else if (t.dataset.inv) { await DB.save('payments', { id: t.dataset.inv, invoice_issued: true }); render(); toast('סומן: חשבונית הוצאה'); }
   else if (t.dataset.act === 'trash-job' && job) confirmAsk('להעביר את העבודה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('jobs', job.id); back(); toast('הועבר לסל'); });
-  else if (t.dataset.act === 'add-photos' && job) { $('#photo-in').dataset.forJob = job.id; $('#photo-in').dataset.forCust = job.customer_id; $('#photo-in').click(); }
+  else if (t.dataset.act === 'add-photos' && job) { const w = sheet('t-photo-kind'); w.addEventListener('click', (ev) => { const k = ev.target.closest('[data-kind]'); if (!k) return; closeSheet(); const inp = $('#photo-in'); inp.dataset.forJob = job.id; inp.dataset.forCust = job.customer_id; inp.dataset.forTag = k.dataset.kind; delete inp.dataset.forFinding; inp.click(); }); }
+  else if (t.dataset.tag !== undefined && $('#lightbox').dataset.media) { await DB.save('media', { id: $('#lightbox').dataset.media, tag: t.dataset.tag || null }); toast('סווג'); render(); }
+  else if (t.dataset.act === 'new-finding' && job) openFindingForm(job);
+  else if (t.dataset.finding !== undefined && job) openFindingForm(job, +t.dataset.finding);
+  else if (t.dataset.act === 'clear-findings' && job) confirmAsk('לנקות את הממצאים?', 'הממצאים יימחקו מהעבודה (התמונות נשארות).', async () => { await DB.save('jobs', { id: job.id, findings: [] }); render(); });
+  else if (t.dataset.act === 'voice' && job) startVoice(job);
   else if (t.dataset.media) openMedia(t.dataset.media);
   else if (t.dataset.quote) show('quote', { id: t.dataset.quote });
   else if (t.dataset.act === 'new-quote' && job) { const q = await Q.create(job); show('quote', { id: q.id }); }
@@ -301,8 +340,10 @@ document.addEventListener('click', async (e) => {
   else if (t.id === 'logout') { await sb.auth.signOut(); location.reload(); }
 });
 $('#photo-in').addEventListener('change', async (e) => {
-  const files = [...e.target.files]; if (!files.length) return; const jid = e.target.dataset.forJob, cid = e.target.dataset.forCust; e.target.value = '';
-  toast(files.length + ' תמונות נשמרות…'); for (const f of files) { try { await DB.uploadPhoto(f, jid, cid); } catch (err) { console.warn(err); toast('תמונה אחת לא נקלטה'); } }
+  const files = [...e.target.files]; if (!files.length) return; const jid = e.target.dataset.forJob, cid = e.target.dataset.forCust, tag = e.target.dataset.forTag || null, forFinding = e.target.dataset.forFinding; e.target.value = '';
+  toast(files.length + ' תמונות נשמרות…'); const rows = [];
+  for (const f of files) { try { const r = await DB.uploadPhoto(f, jid, cid); if (tag) await DB.save('media', { id: r.id, tag }); rows.push(r); } catch (err) { console.warn(err); toast('תמונה אחת לא נקלטה'); } }
+  if (forFinding && rows[0] && $('#fi-thumb')) { $('#fi-thumb').dataset.media = rows[0].id; $('#fi-thumb').innerHTML = `<img src="${rows[0].thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; return; }
   render(); toast(navigator.onLine ? 'התמונות נשמרו' : 'נשמרו במכשיר — יעלו כשתהיה רשת');
 });
 $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') e.currentTarget.hidden = true; });

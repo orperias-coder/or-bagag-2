@@ -13,12 +13,13 @@ const Q = {
   async create(job) {
     const t = Q.tpl(); let number = null;
     try { if (navigator.onLine) { const { data } = await sb.rpc('next_quote_number'); number = data || null; } } catch (e) {}
-    const row = await DB.save('quotes', { job_id: job.id, number, status: 'draft', version: 1, items: [], discount: null,
+    const items = (job.findings || []).map((f) => ({ id: DB.uuid(), title: f.title, description: f.description || '', qty: Number(f.qty) || 1, unit: f.unit || '', price_per_unit: Number(f.price_per_unit) || 0, total: Math.round((Number(f.qty) || 1) * (Number(f.price_per_unit) || 0)), urgency: '', visible: true, finding_id: f.id }));
+    const row = await DB.save('quotes', { job_id: job.id, number, status: 'draft', version: 1, items, discount: null,
       vat_rate: Number(t.vatRate ?? 18), validity_days: Number(t.validityDays || 30),
       payment_terms: t.paymentTerms || '30% מקדמה במועד החתימה, 70% בסיום העבודה',
       notes: t.standardNotes || '', options: { unforeseen: true, signatures: true, urgency: !!t.showUrgency }, total_before_vat: 0, total: 0 });
     if (['lead', 'visit'].includes(job.stage)) await DB.stage(job.id, 'quote');
-    return row;
+    return items.length ? Q.save(row, { items }, { noVersion: true }) : row;
   },
   cur(id) { return live(D.quotes).find((x) => x.id === id); },
   async save(q, patch, opts = {}) {
@@ -57,7 +58,7 @@ function renderQuote() {
   <div class="dim">${esc(c.name)}${c.address ? ' · ' + esc(c.address) : ''}${q.sent_at ? ' · נשלחה ' + dateHe(q.sent_at) : ''} · בתוקף עד ${dateHe(Q.validUntil(q))}</div></div>
   <div class="section">סעיפים · ${items.length}</div>
   <div class="card" id="q-items">${items.map((i, n) => `<div class="qitem" data-idx="${n}"><div style="flex:1;min-width:0"><div class="t">${n + 1}. ${esc(i.title)}</div>${i.description ? `<div class="d">${esc(i.description)}</div>` : ''}<div class="dim">${i.qty} ${esc(i.unit || '')} × ${money(i.price_per_unit)}${i.urgency ? ' · דחיפות: ' + esc(i.urgency) : ''}</div></div><div style="text-align:left"><b>${money(i.total)}</b><div class="row2" style="margin-top:4px"><button class="btn sm ghost" data-act="edit-item" data-idx="${n}">ערוך</button><button class="btn sm ghost" data-act="del-item" data-idx="${n}">הסר</button></div></div></div>`).join('') || '<div class="empty">אין סעיפים עדיין</div>'}
-  <div class="row2"><button class="btn pri" data-act="add-catalog">מהקטלוג</button><button class="btn" data-act="add-item">סעיף חופשי</button></div></div>
+  <div class="row2"><button class="btn pri" data-act="add-catalog">מהקטלוג</button><button class="btn" data-act="add-item">סעיף חופשי</button>${(j.findings || []).some((f) => !items.some((i) => i.finding_id === f.id)) ? '<button class="btn" data-act="import-findings">ייבא ממצאים</button>' : ''}</div></div>
   <div class="card" id="q-totals"><div class="qitem"><span>סה"כ סעיפים</span><b>${money(k.sum)}</b></div>
   <div class="qitem"><span>הנחה <button class="btn sm ghost" data-act="discount">${q.discount ? (q.discount.type === 'percent' ? q.discount.value + '%' : money(q.discount.value)) + ' · שנה' : 'הוסף'}</button></span><b>${k.disc ? '−' + money(k.disc) : ''}</b></div>
   <div class="qitem"><span>סה"כ לפני מע"מ</span><b>${money(k.before)}</b></div><div class="qitem"><span>מע"מ ${q.vat_rate}%</span><b>${money(k.vat)}</b></div>
@@ -108,6 +109,7 @@ async function quoteAction(act, t) {
   else if (act === 'edit-item') openItemForm(q, +t.dataset.idx);
   else if (act === 'del-item') confirmAsk('להסיר את הסעיף?', q.status === 'draft' ? 'הסעיף יוסר מהטיוטה.' : 'הגרסה הנוכחית נשמרת ותיווצר גרסה חדשה.', async () => { const items = [...q.items]; items.splice(+t.dataset.idx, 1); await Q.save(q, { items }, { noVersion: q.status === 'draft' }); render(); });
   else if (act === 'add-catalog') openCatalog(q);
+  else if (act === 'import-findings') { const j = D.jobs.find((x) => x.id === q.job_id) || {}; const add = (j.findings || []).filter((f) => !(q.items || []).some((i) => i.finding_id === f.id)).map((f) => ({ id: DB.uuid(), title: f.title, description: f.description || '', qty: Number(f.qty) || 1, unit: f.unit || '', price_per_unit: Number(f.price_per_unit) || 0, total: Math.round((Number(f.qty) || 1) * (Number(f.price_per_unit) || 0)), urgency: '', visible: true, finding_id: f.id })); await Q.save(q, { items: [...(q.items || []), ...add] }, { noVersion: q.status === 'draft' }); render(); toast(add.length + ' ממצאים נוספו'); }
   else if (act === 'discount') openDiscount(q);
   else if (act === 'mark-sent') { if (!(q.items || []).length) return toast('אין סעיפים בהצעה'); await Q.markSent(q); render(); toast('סומן: נשלחה. סופרים ימים.'); }
   else if (act === 'versions') renderVersions(q);
