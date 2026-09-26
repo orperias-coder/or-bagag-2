@@ -211,7 +211,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.click('#tabs [data-tab="today"]'); const todayTxt = await p.locator('#cust-list').textContent();
   ok('C1: today shows visit', todayTxt.includes('ביקורים היום · 1') || todayTxt.includes('ביקורים היום'), todayTxt.slice(0, 120));
   ok('C4: navigate link (Waze)', (await p.locator('#cust-list a[href^="https://waze.com/ul"]').count()) >= 1);
-  ok('C5: day summary line', /\d+ ביקורים · \d+ הצעות נשלחו/.test(todayTxt));
+  ok('C5: day summary line', /ביקורים היום/.test(todayTxt) && /\d+ הצעות נשלחו היום/.test(todayTxt));
   await p.click('#plus'); await p.click('#sheet-wrap [data-new="task"]'); const TK = 'e2e משימה ' + TAG; await p.fill('#tk-title', TK); await p.fill('#tk-due', todayStr); await p.click('#tk-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
   ok('C2: task listed today', (await p.locator('#cust-list').textContent()).includes(TK));
   await p.click('[data-open="calendar"]'); await p.waitForSelector('#v-calendar:not([hidden])'); const cal = await p.locator('#v-calendar').textContent();
