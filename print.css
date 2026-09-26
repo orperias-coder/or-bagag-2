@@ -13,4 +13,4 @@
 .page .pbox{background:#faf5ee;border-radius:10px;padding:10px 14px;margin-top:10px;font-size:13px}.page .pbox b{display:block;margin-bottom:3px}.page .pbox.dashed{border:1px dashed #c08a2e;background:#fff}.page .pre{white-space:pre-line}
 .page .psig{display:flex;gap:40px;margin-top:28px;font-size:13px;color:#444}.page .psig>div{flex:1;text-align:center}.page .line{border-top:1.5px solid #1d1a17;margin-bottom:6px}
 .page .pfoot{text-align:center;color:#888;font-size:11.5px;margin-top:20px;border-top:1px solid #e6dfd5;padding-top:8px}
-@media print{ @page{size:A4;margin:12mm} body{background:#fff} #top,#tabs,.print-tools,#toast,#sheet-wrap{display:none!important} #views{padding:0} .view:not(#v-print){display:none!important} .page{border:none;padding:0;max-width:none;border-radius:0} }
+@media print{ @page{size:A4;margin:12mm} body{background:#fff} #top,#tabs,#alerts,#pinlock,.print-tools,#toast,#sheet-wrap{display:none!important} #views{padding:0} .view:not(#v-print){display:none!important} .page{border:none;padding:0;max-width:none;border-radius:0} }

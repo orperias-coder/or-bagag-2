@@ -419,10 +419,11 @@ const PIN_KEY = 'ob2_pin';
 function parseLead(text) {   // ליד מהודעה משותפת: מחלץ טלפון, שם וכתובת מהטקסט — אור מתקן לפני שמירה
   const t = String(text || '').replace(/\r/g, '').trim(); const lines = t.split('\n').map((s) => s.trim()).filter(Boolean);
   const ph = t.match(/(?:\+?972[-\s]?|0)5\d[-\s]?\d{3}[-\s]?\d{4}/); const phone = ph ? normPhone(ph[0].replace(/^\+?972/, '0')) : '';
-  const named = t.match(/(?:שם|שמי|מדבר|מדברת)[:\s]+([^\n,.:]{2,30})/); const wa = lines.find((l) => /^\[?\d{1,2}[./]\d{1,2}/.test(l) && l.includes(':')) || '';
+  const named = t.match(/(?:^|\n)\s*(?:שם|שמי|שם מלא)\s*[:\-]\s*([^\n,.:]{2,30})/) || t.match(/(?:מדבר|מדברת|כאן)\s+([א-ת]{2,}(?:\s[א-ת]{2,})?)/);   // רק "שם: X" או "מדבר X" — לא כל "שם" בטקסט
+  const wa = lines.find((l) => /^\[?\d{1,2}[./]\d{1,2}/.test(l) && l.includes(':')) || '';
   const waName = wa.match(/\]\s*([^:]{2,30}):/) || wa.match(/-\s*([^:]{2,30}):/);
   const name = (named && named[1].trim()) || (waName && waName[1].trim()) || '';
-  const adr = t.match(/(?:כתובת|רחוב|רח'|שד'|שדרות|סמטת)[:\s]*([^\n]{3,60})/); const address = adr ? adr[1].trim() : (lines.find((l) => /\d+/.test(l) && /[א-ת]{3,}/.test(l) && !/05\d/.test(l) && l.length < 60 && !l.includes(':')) || '');
+  const adr = t.match(/(?:כתובת|רחוב|רח'|שד'|שדרות|סמטת)[:\s]*([^\n]{3,60})/); const address = adr ? adr[1].trim() : (lines.find((l) => /[א-ת]{2,}\s+\d{1,4}\b/.test(l) && !/05\d/.test(l) && l.length < 60 && !l.includes(':')) || '');
   return { name, phone, address, text: t };
 }
 function openLeadForm(text) {
@@ -445,11 +446,12 @@ const WA_MAINT = 'שלום, זה אור מאור בגג. עברה שנה מהע�
 const WA_FOLLOWUP_TEXT = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
 const WA_FOLLOWUP = WA_FOLLOWUP_TEXT;
 const WA_TPL = [['שלחו לי פרטים', 'שלום, הגעתם לאור בגג. כדי שאוכל לעזור, אנא שלחו: שם מלא, כתובת מדויקת, תמונה של הבעיה ותיאור קצר. תודה, אור'], ['בדרך אליך', 'שלום, זה אור מאור בגג. אני בדרך אליכם, מגיע בעוד כ-20 דקות.'], ['ההצעה מצורפת', 'שלום, מצורפת הצעת המחיר כפי שסיכמנו. אשמח לענות על כל שאלה. אור - אור בגג'], ['נשלחה תזכורת', WA_FOLLOWUP_TEXT]];
-const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
+const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^972/, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
+const jobLive = (jid) => !jid || !!live(D.jobs).find((j) => j.id === jid);   // פריט של עבודה שבסל חוזר יחד איתה, לא לבד
 function renderTrash() {
   const v = $('#v-trash'); v.hidden = false;
   const rows = [['customers', 'לקוח', D.customers.filter((c) => c.deleted_at).map((c) => [c, c.name])], ['jobs', 'עבודה', D.jobs.filter((j) => j.deleted_at).map((j) => [j, (j.title || 'עבודה') + ' · ' + (custOf(j.customer_id)?.name || '')])], ['quotes', 'הצעה', D.quotes.filter((q) => q.deleted_at).map((q) => [q, 'הצעה ' + (q.number || '') + ' · ' + (custOf((D.jobs.find((j) => j.id === q.job_id) || {}).customer_id)?.name || '')])],
-    ['tasks', 'משימה', D.tasks.filter((t) => t.deleted_at).map((t) => [t, t.title])], ['findings', 'ממצא', D.findings.filter((f) => f.deleted_at).map((f) => [f, f.title])], ['expenses', 'הוצאה', D.expenses.filter((e) => e.deleted_at).map((e) => [e, (e.title || e.worker || EXP_HE[e.kind] || '') + ' · ' + money(e.amount)])]];
+    ['tasks', 'משימה', D.tasks.filter((t) => t.deleted_at && jobLive(t.job_id)).map((t) => [t, t.title])], ['findings', 'ממצא', D.findings.filter((f) => f.deleted_at && jobLive(f.job_id)).map((f) => [f, f.title])], ['expenses', 'הוצאה', D.expenses.filter((e) => e.deleted_at && jobLive(e.job_id)).map((e) => [e, (e.title || e.worker || EXP_HE[e.kind] || '') + ' · ' + money(e.amount)])]];
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="section">סל המיחזור</div><div class="dim" style="margin-bottom:8px">שום דבר לא נמחק באמת. לחיצה על "שחזר" מחזירה.</div><div class="list">` +
     rows.flatMap(([t, he, arr]) => arr.map(([x, label]) => `<div class="row"><div class="main"><div class="name">${esc(label)}</div><div class="sub">${he} · הועבר לסל ${dateHe(x.deleted_at)}</div></div><button class="btn sm" data-restore="${t}:${x.id}">שחזר</button></div>`)).join('') + `</div>` || '';
   if (!rows.some(([, , a]) => a.length)) v.innerHTML += '<div class="empty">הסל ריק</div>';

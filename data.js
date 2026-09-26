@@ -103,10 +103,11 @@ const DB = (() => {
     const { data: { user } } = await sb.auth.getUser(); D.uid = user && user.id;
     const sel = { customers: '*', jobs: '*', quotes: '*', tasks: '*', findings: '*', expenses: '*', quote_versions: 'id,quote_id,version,snapshot,created_at', payments: '*',
       media: 'id,job_id,customer_id,kind,tag,storage_path,thumb_data,taken_at,caption,created_at,updated_at,deleted_at', alerts: '*' };
+    const before = await qAll();   // מה שהיה בתור לפני הצילום: אם עלה בדיוק באמצע, לא ייעלם מהמסך
     const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'alerts' ? 'at' : t === 'quote_versions' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
     for (const [t, r] of res) { if (r.error) { if (t === 'alerts') { D.alerts = []; continue; } throw r.error; } D[t] = r.data; }
     const st = await sb.from('settings').select('*').maybeSingle(); if (!st.error && st.data) D.settings = st.data;
-    for (const it of await qAll()) if (it.op === 'upsert' || it.op === 'update') local(it.table, it.row);   // מה שעוד לא עלה גובר
+    for (const it of [...before, ...(await qAll())]) if (it.op === 'upsert' || it.op === 'update') local(it.table, it.row);   // מה שעוד לא עלה (או עלה תוך-כדי) גובר
     D.loadedAt = Date.now(); cacheSave();
   }
   async function uploadPhoto(file, jobId, customerId) {
