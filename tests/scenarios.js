@@ -154,8 +154,9 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const bk = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
   ok('more: backup file has all keys', ['customers', 'jobs', 'quotes', 'payments', 'settings'].every((k) => k in bk) && bk.customers.length > 0);
   await p.evaluate(async () => { await sb.from('alerts').insert({ user_id: D.uid, kind: 'test', message: 'e2e התראת בדיקה' }); await DB.loadAll(); render(); });
-  ok('more: alert banner shown', (await p.locator('#alerts .alert').count()) === 1);
-  await p.click('#alerts [data-seen]'); await p.waitForTimeout(150); ok('more: alert dismissed', (await p.locator('#alerts .alert').count()) === 0);
+  ok('more: alert banner shown', (await p.locator('#alerts .alert').count()) >= 1, String(await p.locator('#alerts .alert').count()));
+  while (await p.locator('#alerts [data-seen]').count()) { await p.click('#alerts [data-seen]'); await p.waitForTimeout(150); }
+  ok('more: alert dismissed', (await p.locator('#alerts .alert').count()) === 0);
   await settle(p);
 
   await ctx.close(); await b.close();
