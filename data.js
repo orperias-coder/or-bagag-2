@@ -68,7 +68,7 @@ const DB = (() => {
   async function save(table, patch) {
     const now = new Date().toISOString(); const isNew = !patch.id;
     const base = table === 'settings' ? (D.settings || {}) : (isNew ? { id: uuid(), created_at: now } : ((D[table] || []).find((x) => x.id === patch.id) || {}));
-    const row = { ...base, ...patch, updated_at: now };
+    const row = { ...base, ...patch }; if (table !== 'quote_versions') row.updated_at = now;   // ל-quote_versions אין updated_at (גרסה לא משתנה)
     for (const k of Object.keys(row)) if (k.startsWith('_')) delete row[k];
     delete row.user_id;                                       // הענן ממלא auth.uid()
     local(table, row);

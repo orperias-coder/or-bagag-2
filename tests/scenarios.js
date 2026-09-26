@@ -93,6 +93,30 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   ok('S1: full photo url works', !!(await p2.evaluate(async () => { const m = D.media.find((m) => m.storage_path && m.job_id === S.params.id); return m && (await DB.photoUrl(m.storage_path)); })));
   await p2.screenshot({ path: OUT + '/s1-desktop-job.png', fullPage: true }); await ctx2.close();
 
+  // ---- S2: הצעה במחשב, סגירה באמצע → בטלפון אותה טיוטה ----
+  const pd = await login(await b.newContext({ viewport: { width: 1280, height: 800 }, locale: 'he-IL' }));
+  await pd.fill('#search', N2); await pd.click('#cust-list .row'); await pd.click('#v-customer .row[data-job]'); await pd.waitForSelector('#v-job:not([hidden]) .card');
+  await pd.click('[data-act="new-quote"]'); await pd.waitForSelector('#v-quote:not([hidden]) #q-items');
+  await pd.click('[data-act="add-item"]'); await pd.fill('#i-title', 'חידוש רוכבים'); await pd.fill('#i-qty', '20'); await pd.fill('#i-unit', 'מטר'); await pd.fill('#i-ppu', '300'); await pd.click('#i-save'); await pd.waitForSelector('#sheet-wrap', { state: 'detached' });
+  await pd.click('[data-act="add-item"]'); await pd.fill('#i-title', 'קופינג'); await pd.fill('#i-qty', '10'); await pd.fill('#i-ppu', '250'); await pd.click('#i-save'); await pd.waitForSelector('#sheet-wrap', { state: 'detached' });
+  const tot = await pd.locator('#q-totals').textContent();
+  ok('S2: totals 8,500 / 10,030', tot.includes('8,500') && tot.includes('10,030'), tot.replace(/\s+/g, ' ').slice(0, 120));
+  const qnum = (await pd.locator('#q-number').textContent()).trim(); ok('S2: number assigned YYYY-NNN', /^\d{4}-\d{3}$/.test(qnum), qnum);
+  await pd.screenshot({ path: OUT + '/s2-desktop-quote.png', fullPage: true });
+  await settle(pd); await pd.context().close();
+  await p.evaluate(() => DB.loadAll().then(render)); await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  ok('S2: phone shows same draft', (await p.locator('#q-totals').textContent()).includes('10,030') && (await p.locator('#v-quote').textContent()).includes('חידוש רוכבים'));
+  await p.screenshot({ path: OUT + '/s2-phone-quote.png', fullPage: true });
+  // ---- S5: עריכה אחרי "נשלחה" → גרסה 1 נשמרת, גרסה 2 מוצגת ----
+  await p.click('[data-act="mark-sent"]'); await p.waitForFunction(() => document.querySelector('#v-quote .chip.sent'));
+  ok('S5: job stage sent', (await p.evaluate(() => D.jobs.find((j) => j.id === Q.cur(S.params.id).job_id).stage)) === 'sent');
+  await p.click('[data-act="edit-item"][data-idx="0"]'); await p.fill('#i-ppu', '320'); await p.click('#i-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  ok('S5: version 2', (await p.locator('#q-version').textContent()).trim() === '2');
+  await p.click('[data-act="versions"]'); ok('S5: version 1 kept with old price', (await p.locator('#v-versions').textContent()).includes('300') && (await p.locator('#v-versions').textContent()).includes('גרסה 1'));
+  await settle(p);
+  const vrows = await p.evaluate(async () => (await sb.from('quote_versions').select('version').eq('quote_id', S.params.id)).data);
+  ok('S5: version row in cloud', Array.isArray(vrows) && vrows.length === 1 && vrows[0].version === 1);
+
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('CRASH', e); process.exit(2); });

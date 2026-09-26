@@ -37,9 +37,9 @@ function show(view, params) {
 function back() { const p = S.stack.pop(); if (!p) return show('customers'); S.view = p.view; S.params = p.params || {}; render(); }
 function render() {
   document.querySelectorAll('.view').forEach((v) => v.hidden = true);
-  const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash };
+  const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint };
   (map[S.view] || renderCustomers)();
-  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customer: 'customers', job: 'customers', trash: 'more' }[S.view] || S.view)));
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customer: 'customers', job: 'customers', quote: 'customers', print: 'customers', trash: 'more' }[S.view] || S.view)));
 }
 
 // ---------- מסכים ----------
@@ -100,15 +100,17 @@ function renderJob() {
   <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
   ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
-  ${qs.length ? `<div class="section">הצעות מחיר</div>` + qs.map(quoteBlock).join('') : ''}
+  <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
   ${(j.price_agreed || ps.length) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ' · <b style="color:var(--warn)">בלי חשבונית</b>'}</span><b>${money(p.amount)}</b></div>`).join('')}</div>` : ''}
   </div><div>
   <div class="section">תמונות · ${ms.length}</div><div class="card"><div class="thumbs">${ms.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div><div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
   </div></div>`;
+  bindJobNotes(j);
 }
 function bindJobNotes(j) {
   const ta = $('#j-notes'); if (!ta) return;
-  ta.onblur = async () => { const v = ta.value.trim() || null; if (v !== (j.visit_notes || null)) { await DB.save('jobs', { id: j.id, visit_notes: v }); toast('הערות נשמרו'); } };
+  const saveNotes = async () => { const v = ta.value.trim() || null; const cur = live(D.jobs).find((x) => x.id === j.id) || j; if (v !== (cur.visit_notes || null)) { await DB.save('jobs', { id: j.id, visit_notes: v }); toast('הערות נשמרו'); } };
+  let h; ta.oninput = () => { clearTimeout(h); h = setTimeout(saveNotes, 900); }; ta.onblur = () => { clearTimeout(h); saveNotes(); };
 }
 async function openMedia(id) {
   const m = D.media.find((x) => x.id === id); if (!m) return;
@@ -116,6 +118,7 @@ async function openMedia(id) {
   const url = await DB.photoUrl(m.storage_path); if (!url) return toast('לא הצלחתי לפתוח את התמונה');
   const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.hidden = false;
 }
+function renderPrint() { const v = $('#v-print'); v.hidden = false; v.innerHTML = '<div class="empty">תצוגת ההדפסה — במשימה הבאה</div>'; }
 function renderMoney() {
   const v = $('#v-money'); v.hidden = false;
   const owe = live(D.jobs).filter((j) => ['approved', 'doing'].includes(j.stage) && j.price_agreed).map((j) => ({ j, left: j.price_agreed - paymentsOf(j.id).reduce((a, p) => a + Number(p.amount || 0), 0) })).filter((x) => x.left > 0);
@@ -174,7 +177,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
   const job = S.view === 'job' ? live(D.jobs).find((x) => x.id === S.params.id) : null;
@@ -192,6 +195,10 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'trash-job' && job) confirmAsk('להעביר את העבודה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('jobs', job.id); back(); toast('הועבר לסל'); });
   else if (t.dataset.act === 'add-photos' && job) { $('#photo-in').dataset.forJob = job.id; $('#photo-in').dataset.forCust = job.customer_id; $('#photo-in').click(); }
   else if (t.dataset.media) openMedia(t.dataset.media);
+  else if (t.dataset.quote) show('quote', { id: t.dataset.quote });
+  else if (t.dataset.act === 'new-quote' && job) { const q = await Q.create(job); show('quote', { id: q.id }); }
+  else if (S.view === 'quote' && t.dataset.act) quoteAction(t.dataset.act, t);
+  else if (t.dataset.act === 'print') { document.title = $('#v-print').dataset.title || document.title; window.print(); }
   else if (t.hasAttribute('data-close-lb')) $('#lightbox').hidden = true;
   else if (t.dataset.open === 'trash') show('trash');
   else if (t.dataset.restore) { const [tb, id] = t.dataset.restore.split(':'); await DB.restore(tb, id); if (tb === 'customers') for (const j of D.jobs.filter((j) => j.customer_id === id && j.deleted_at)) await DB.restore('jobs', j.id); render(); toast('שוחזר'); }
