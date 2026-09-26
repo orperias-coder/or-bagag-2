@@ -15,22 +15,10 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], payments: [], media: [], loadedAt: 0 };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], settings: null, uid: null, loadedAt: 0 };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
-async function loadAll() {
-  const [c, j, q, p, m] = await Promise.all([
-    sb.from('customers').select('*').order('updated_at', { ascending: false }),
-    sb.from('jobs').select('*').order('updated_at', { ascending: false }),
-    sb.from('quotes').select('id,job_id,number,version,status,items,discount,vat_rate,validity_days,payment_terms,notes,total_before_vat,total,sent_at,created_at,updated_at,deleted_at'),
-    sb.from('payments').select('*'),
-    sb.from('media').select('id,job_id,customer_id,kind,thumb_data,taken_at,caption,created_at,deleted_at').order('taken_at', { ascending: false }).limit(400),
-  ]);
-  for (const r of [c, j, q, p, m]) if (r.error) throw r.error;
-  Object.assign(D, { customers: c.data, jobs: j.data, quotes: q.data, payments: p.data, media: m.data, loadedAt: Date.now() });
-  cacheSave();
-}
 const live = (arr) => arr.filter((x) => !x.deleted_at);
 const jobsOf = (cid) => live(D.jobs).filter((j) => j.customer_id === cid).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 const quotesOf = (jid) => live(D.quotes).filter((q) => q.job_id === jid).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -138,7 +126,7 @@ document.addEventListener('click', async (e) => {
   else if (t.hasAttribute('data-back')) back();
   else if (t.dataset.tab) { S.stack = []; S.q = ''; $('#search').value = ''; show(t.dataset.tab); }
   else if (t.id === 'plus') toast('הוספה מגיעה בשלב הבא');
-  else if (t.id === 'refresh') { toast('טוען…'); await loadAll(); render(); toast('עודכן'); }
+  else if (t.id === 'refresh') { toast('טוען…'); await DB.loadAll(); render(); toast('עודכן'); }
   else if (t.id === 'logout') { await sb.auth.signOut(); location.reload(); }
 });
 $('#search').addEventListener('input', (e) => { S.q = e.target.value; if (!['customers', 'work'].includes(S.view)) { S.stack = []; S.view = 'customers'; } render(); });
@@ -151,15 +139,14 @@ async function login() {
   if (error) { $('#li-msg').textContent = 'לא הצלחתי להתחבר. בדוק אימייל וסיסמה.'; return; }
   await boot();
 }
-function setNet() { $('#netdot').classList.toggle('off', !navigator.onLine); }
+function setNet() { const n = $('#netdot'); n.classList.toggle('off', !navigator.onLine); const pc = DB.pendingCount(); n.classList.toggle('pending', pc > 0); n.title = !navigator.onLine ? 'אין רשת' : pc ? pc + ' עדיין לא עלו' : 'מסונכרן'; }
 window.addEventListener('online', setNet); window.addEventListener('offline', setNet);
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('#login').hidden = false; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = true); return; }
-  $('#login').hidden = true; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = false); setNet();
+  $('#login').hidden = true; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = false); DB.onChange(setNet); setNet();
   cacheLoad(); render();
-  try { await loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
+  try { await DB.loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-boot();
