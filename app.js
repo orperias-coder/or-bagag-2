@@ -98,13 +98,23 @@ function renderJob() {
   <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${esc(j.title || 'עבודה')}</h2><span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>
   <div class="stages">${STAGES.map((s, i) => `<span class="${i <= idx ? 'done' : ''}" title="${STAGE_HE[s]}"></span>`).join('')}</div>
   <div class="kv"><span>${esc(c.name)}</span>${c.address ? `<span>${esc(c.address)}</span>` : ''}${j.visit_at ? `<span>ביקור ${dateHe(j.visit_at)}</span>` : ''}${days != null ? `<span class="chip days">נשלחה לפני ${days} ימים</span>` : ''}</div>
-  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}${j.visit_notes ? `<div style="margin-top:8px;white-space:pre-line"><b>מהביקור:</b> ${esc(j.visit_notes)}</div>` : ''}<div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
+  ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'pri'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm" style="display:inline-flex;align-items:center;text-decoration:none" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
   ${qs.length ? `<div class="section">הצעות מחיר</div>` + qs.map(quoteBlock).join('') : ''}
   ${(j.price_agreed || ps.length) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ' · <b style="color:var(--warn)">בלי חשבונית</b>'}</span><b>${money(p.amount)}</b></div>`).join('')}</div>` : ''}
   </div><div>
-  ${ms.length ? `<div class="section">תמונות · ${ms.length}</div><div class="card"><div class="thumbs">${ms.map((m) => m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="dim" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:10px;font-size:12px">תמונה</div>`).join('')}</div></div>` : ''}
+  <div class="section">תמונות · ${ms.length}</div><div class="card"><div class="thumbs">${ms.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div><div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
   </div></div>`;
+}
+function bindJobNotes(j) {
+  const ta = $('#j-notes'); if (!ta) return;
+  ta.onblur = async () => { const v = ta.value.trim() || null; if (v !== (j.visit_notes || null)) { await DB.save('jobs', { id: j.id, visit_notes: v }); toast('הערות נשמרו'); } };
+}
+async function openMedia(id) {
+  const m = D.media.find((x) => x.id === id); if (!m) return;
+  if (!m.storage_path) return toast('התמונה עדיין לא עלתה לענן — תיפתח כשתהיה רשת');
+  const url = await DB.photoUrl(m.storage_path); if (!url) return toast('לא הצלחתי לפתוח את התמונה');
+  const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.hidden = false;
 }
 function renderMoney() {
   const v = $('#v-money'); v.hidden = false;
@@ -164,8 +174,8 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],#plus,#refresh,#logout');
-  if (!t) return;
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],#plus,#refresh,#logout');
+  if (!t || t.id === 'photo-in') return;
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
   const job = S.view === 'job' ? live(D.jobs).find((x) => x.id === S.params.id) : null;
   if (t.dataset.cust) show('customer', { id: t.dataset.cust });
@@ -180,11 +190,20 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
   else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה'); await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
   else if (t.dataset.act === 'trash-job' && job) confirmAsk('להעביר את העבודה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('jobs', job.id); back(); toast('הועבר לסל'); });
+  else if (t.dataset.act === 'add-photos' && job) { $('#photo-in').dataset.forJob = job.id; $('#photo-in').dataset.forCust = job.customer_id; $('#photo-in').click(); }
+  else if (t.dataset.media) openMedia(t.dataset.media);
+  else if (t.hasAttribute('data-close-lb')) $('#lightbox').hidden = true;
   else if (t.dataset.open === 'trash') show('trash');
   else if (t.dataset.restore) { const [tb, id] = t.dataset.restore.split(':'); await DB.restore(tb, id); if (tb === 'customers') for (const j of D.jobs.filter((j) => j.customer_id === id && j.deleted_at)) await DB.restore('jobs', j.id); render(); toast('שוחזר'); }
   else if (t.id === 'refresh') { toast('טוען…'); await DB.loadAll(); render(); toast('עודכן'); }
   else if (t.id === 'logout') { await sb.auth.signOut(); location.reload(); }
 });
+$('#photo-in').addEventListener('change', async (e) => {
+  const files = [...e.target.files]; if (!files.length) return; const jid = e.target.dataset.forJob, cid = e.target.dataset.forCust; e.target.value = '';
+  toast(files.length + ' תמונות נשמרות…'); for (const f of files) { try { await DB.uploadPhoto(f, jid, cid); } catch (err) { console.warn(err); toast('תמונה אחת לא נקלטה'); } }
+  render(); toast(navigator.onLine ? 'התמונות נשמרו' : 'נשמרו במכשיר — יעלו כשתהיה רשת');
+});
+$('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') e.currentTarget.hidden = true; });
 $('#search').addEventListener('input', (e) => { S.q = e.target.value; if (!['customers', 'work'].includes(S.view)) { S.stack = []; S.view = 'customers'; } render(); });
 $('#li-go').addEventListener('click', login);
 $('#li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });

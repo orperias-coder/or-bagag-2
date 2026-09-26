@@ -7,7 +7,9 @@ const DB = (() => {
 
   // ---- תור ב-IndexedDB ----
   let idb;
-  const openIDB = () => idb || (idb = new Promise((res, rej) => { const r = indexedDB.open('ob2', 1); r.onupgradeneeded = () => r.result.createObjectStore('queue', { keyPath: 'qid' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const openIDB = () => idb || (idb = new Promise((res, rej) => { const r = indexedDB.open('ob2', 2); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('queue')) d.createObjectStore('queue', { keyPath: 'qid' }); if (!d.objectStoreNames.contains('failed')) d.createObjectStore('failed', { keyPath: 'qid' }); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const fAll = async () => { const db = await openIDB(); return new Promise((res) => { const rq = db.transaction('failed').objectStore('failed').getAll(); rq.onsuccess = () => res(rq.result || []); }); };
+  const fPut = async (item) => { const db = await openIDB(); return new Promise((res) => { const t = db.transaction('failed', 'readwrite'); t.objectStore('failed').put(item); t.oncomplete = res; }); };
   const qAll = async () => { const db = await openIDB(); return new Promise((res) => { const rq = db.transaction('queue').objectStore('queue').getAll(); rq.onsuccess = () => res(rq.result || []); }); };
   const qPut = async (item) => { const db = await openIDB(); return new Promise((res) => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').put(item); t.oncomplete = res; }); };
   const qDel = async (qid) => { const db = await openIDB(); return new Promise((res) => { const t = db.transaction('queue', 'readwrite'); t.objectStore('queue').delete(qid); t.oncomplete = res; }); };
@@ -45,7 +47,16 @@ const DB = (() => {
     try {
       for (const item of (await qAll()).sort((a, b) => a.at - b.at)) {
         try { await send(item); await qDel(item.qid); }
-        catch (e) { console.warn('[queue]', item.op, item.table || '', e.message || e); break; }   // שומרים סדר: עוצרים בכשל הראשון
+        catch (e) {
+          const msg = String((e && e.message) || e);
+          // כשל-רשת → עוצרים ומנסים אחר-כך (שומרים סדר). כשל-נתונים (הענן דחה) → הפריט לא חוסם את השאר:
+          // נשמר ב"כתיבות שנדחו" עם השגיאה, ונרשם ביומן-האירועים. שום דבר לא נזרק.
+          const isNet = !e || !e.code && /fetch|network|Failed to|timeout/i.test(msg);
+          console.warn('[queue]', item.op, item.table || '', msg);
+          if (isNet) break;
+          await fPut({ ...item, error: msg, failedAt: Date.now() }); await qDel(item.qid);
+          try { await sb.from('events').insert({ entity: item.table || item.op, entity_id: (item.row && item.row.id) || uuid(), action: 'sync-failed', device: DEVICE, diff: { error: msg, op: item.op } }); } catch (e2) {}
+        }
       }
     } finally { syncing = false; await refreshPending(); }
   }
@@ -86,7 +97,9 @@ const DB = (() => {
     D.loadedAt = Date.now(); cacheSave();
   }
   async function uploadPhoto(file, jobId, customerId) {
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+    let img;
+    try { img = await createImageBitmap(file); }   // אמין יותר מ-Image לקבצים מהמצלמה (כולל סיבוב EXIF)
+    catch (e) { img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('image-load')); i.src = URL.createObjectURL(file); }); }
     const draw = (max) => { const s = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s)); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c; };
     const thumb = draw(240).toDataURL('image/jpeg', 0.7);
     const full = await new Promise((res) => draw(1600).toBlob(res, 'image/jpeg', 0.85));
@@ -96,5 +109,5 @@ const DB = (() => {
   }
   async function photoUrl(path) { const { data } = await sb.storage.from('app2-media').createSignedUrl(path, 3600); return data && data.signedUrl; }
   refreshPending();
-  return { save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid };
+  return { save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid, _queue: qAll, _failed: fAll, _send: send };
 })();
