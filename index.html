@@ -38,6 +38,7 @@
     <section id="v-job" class="view" hidden></section>
     <section id="v-money" class="view" hidden></section>
     <section id="v-more" class="view" hidden></section>
+    <section id="v-trash" class="view" hidden></section>
   </main>
 
   <nav id="tabs" hidden>
@@ -47,7 +48,13 @@
     <button data-tab="money"><span class="ico">₪</span>כסף</button>
     <button data-tab="more"><span class="ico">⋯</span>עוד</button>
   </nav>
-  <div id="toast" hidden></div>
+  <template id="t-customer-form"><div class="sheet"><div class="sheet-h"><b id="f-title">לקוח חדש</b><button class="btn sm ghost" data-close>סגור</button></div>
+<label>שם<input id="f-name" required autocomplete="off"></label><label>טלפון<input id="f-phone" inputmode="tel" dir="ltr" autocomplete="off"></label><label>כתובת<input id="f-address" autocomplete="off"></label><label>הערות<textarea id="f-notes" rows="2"></textarea></label>
+<button class="btn pri" id="f-save">שמור</button></div></template>
+<template id="t-plus"><div class="sheet"><div class="sheet-h"><b>מה להוסיף?</b><button class="btn sm ghost" data-close>סגור</button></div><button class="btn" data-new="customer">לקוח חדש</button><button class="btn" data-new="job">עבודה ללקוח קיים</button></div></template>
+<template id="t-confirm"><div class="sheet"><b id="confirm-title"></b><div class="dim" id="confirm-msg"></div><div class="row2"><button class="btn" data-close>בטל</button><button class="btn danger" id="confirm-yes">כן</button></div></div></template>
+<template id="t-pick-customer"><div class="sheet"><div class="sheet-h"><b>לאיזה לקוח?</b><button class="btn sm ghost" data-close>סגור</button></div><input id="pick-search" placeholder="חיפוש" autocomplete="off"><div class="list" id="pick-list"></div></div></template>
+<div id="toast" hidden></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="app.js"></script>

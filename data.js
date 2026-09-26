@@ -79,7 +79,7 @@ const DB = (() => {
     const { data: { user } } = await sb.auth.getUser(); D.uid = user && user.id;
     const sel = { customers: '*', jobs: '*', quotes: '*', quote_versions: 'id,quote_id,version,snapshot,created_at', payments: '*',
       media: 'id,job_id,customer_id,kind,storage_path,thumb_data,taken_at,caption,created_at,updated_at,deleted_at', alerts: '*' };
-    const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'quote_versions' || t === 'alerts' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
+    const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'alerts' ? 'at' : t === 'quote_versions' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
     for (const [t, r] of res) { if (r.error) { if (t === 'alerts') { D.alerts = []; continue; } throw r.error; } D[t] = r.data; }
     const st = await sb.from('settings').select('*').maybeSingle(); if (!st.error && st.data) D.settings = st.data;
     for (const it of await qAll()) if (it.op === 'upsert') local(it.table, it.row);   // מה שעוד לא עלה גובר

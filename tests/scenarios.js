@@ -31,6 +31,23 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const ev = await p.evaluate(async (id) => (await sb.from('events').select('action,device').eq('entity_id', id)).data, qid);
   ok('queue: event logged', Array.isArray(ev) && ev.length === 1 && ev[0].action === 'create');
 
+  // ---- S4: לקוח חדש → סל → שחזור עם כל הפרטים ----
+  await p.click('#plus'); await p.click('[data-new="customer"]');
+  await p.fill('#f-name', 'e2e לקוח סל'); await p.fill('#f-phone', '0501111111'); await p.fill('#f-address', 'רחוב הבדיקה 4'); await p.click('#f-save');
+  await p.waitForSelector('#v-customer:not([hidden]) h2');
+  ok('S4: customer created', (await p.locator('#v-customer h2').textContent()).includes('e2e לקוח סל'));
+  const cid = await p.evaluate(() => S.params.id);
+  await p.click('[data-act="trash-customer"]'); await p.click('#confirm-yes'); await p.waitForSelector('#v-customers:not([hidden])');
+  await p.fill('#search', 'e2e לקוח סל'); ok('S4: not in list after trash', !(await p.locator('#cust-list').textContent()).includes('e2e לקוח סל'));
+  await p.click('#tabs [data-tab="more"]'); await p.click('[data-open="trash"]'); await p.waitForSelector('#v-trash:not([hidden])');
+  ok('S4: in trash', (await p.locator('#v-trash').textContent()).includes('e2e לקוח סל'));
+  await p.click(`[data-restore="customers:${cid}"]`); await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', 'e2e לקוח סל');
+  ok('S4: restored with phone+address', (await p.locator('#cust-list').textContent()).includes('0501111111'));
+  await settle(p);
+  const cloud = await p.evaluate(async (id) => (await sb.from('customers').select('deleted_at,address').eq('id', id).single()).data, cid);
+  ok('S4: cloud shows restored', cloud && cloud.deleted_at === null && cloud.address === 'רחוב הבדיקה 4');
+  await p.screenshot({ path: OUT + '/s4-customer.png' });
+
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('CRASH', e); process.exit(2); });

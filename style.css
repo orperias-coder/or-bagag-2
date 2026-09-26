@@ -73,3 +73,14 @@ button,input{font-family:inherit;font-size:inherit}
   #tabs .ico{font-size:18px}
   #plus{width:44px;height:44px;margin:6px;font-size:26px!important}
 }
+
+/* גיליון תחתון (טפסים) */
+#sheet-wrap{position:fixed;inset:0;background:#0006;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:88vh;overflow:auto;background:var(--card);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
+@media (min-width:900px){#sheet-wrap{align-items:center}.sheet{border-radius:18px}}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;font-size:18px}
+.sheet label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--dim)}
+.sheet input,.sheet textarea,.sheet select{height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;color:var(--text);font-size:16.5px}
+.sheet textarea{height:auto;padding:10px 12px;resize:vertical}
+.row2{display:flex;gap:8px;flex-wrap:wrap}.row2 .btn{flex:1}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
