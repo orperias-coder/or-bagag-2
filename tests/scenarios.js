@@ -156,7 +156,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.evaluate(async () => { await sb.from('alerts').insert({ user_id: D.uid, kind: 'test', message: 'e2e התראת בדיקה' }); await DB.loadAll(); render(); });
   ok('more: alert banner shown', (await p.locator('#alerts .alert').count()) >= 1, String(await p.locator('#alerts .alert').count()));
   while (await p.locator('#alerts [data-seen]').count()) { await p.click('#alerts [data-seen]'); await p.waitForTimeout(150); }
-  ok('more: alert dismissed', (await p.locator('#alerts .alert').count()) === 0);
+  ok('more: alert dismissed', (await p.locator('#alerts .alert:not(.warn)').count()) === 0);   // פס-החשבונית (warn) נשאר בכוונה עד שמסמנים
   await settle(p);
 
   // ---- ממצאי ביקורת-השבירה ----
@@ -265,6 +265,20 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.click('#v-print [data-back]'); await p.waitForSelector('#v-job:not([hidden]) .card');
   await p.evaluate(async () => { const d = new Date(); d.setDate(d.getDate() - 365); await DB.save('jobs', { id: S.params.id, finished_at: d.toISOString() }); await DB.stage(S.params.id, 'paid'); });
   await p.click('#tabs [data-tab="work"]'); ok('B7: maintenance-before-winter section', (await p.locator('#cust-list').textContent()).includes('תחזוקה לפני החורף'));
+  // ---- גל 2 ה': חיפוש בכל דבר, מיזוג כפולים, חשבונית עקשנית, דוח ייעוץ, נעילה ----
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', 'e2e סעיף לביצוע'); await p.waitForTimeout(200);
+  ok('E1: search finds customer by quote item text', (await p.locator('#cust-list .row').count()) >= 1 && (await p.locator('#cust-list').textContent()).includes(N3));
+  ok('E5: nagging invoice bar shown', (await p.locator('#alerts .alert.warn').count()) === 1);
+  const DUP = 'e2e כפול ' + TAG.slice(-4); await p.fill('#search', ''); await p.click('#plus'); await p.click('[data-new="customer"]'); await p.fill('#f-name', DUP); await p.fill('#f-phone', '0509999' + TAG.slice(-3)); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
+  await p.click('[data-act="new-job"]'); await p.fill('#j-title', 'e2e עבודה של הכפול'); await p.click('#j-save'); await p.waitForSelector('#v-job:not([hidden]) .card'); await p.click('#v-job [data-back]');
+  await p.click('#tabs [data-tab="today"]'); await p.click('#plus'); await p.click('[data-new="customer"]'); await p.fill('#f-name', DUP + ' ב'); await p.fill('#f-phone', '0509999' + TAG.slice(-3)); await p.click('#f-save'); await p.waitForSelector('#v-customer:not([hidden]) h2');
+  ok('E2: duplicate phone banner', (await p.locator('#v-customer [data-merge]').count()) === 1);
+  await p.click('#v-customer [data-merge]'); await p.click('#confirm-yes'); await p.waitForFunction(() => document.querySelector('#v-customer').textContent.includes('e2e עבודה של הכפול'), null, { timeout: 8000 }).catch(() => {});
+  ok('E2: merged: job moved, no banner', (await p.locator('#v-customer').textContent()).includes('e2e עבודה של הכפול') && (await p.locator('#v-customer [data-merge]').count()) === 0);
+  ok('E6: report-builder button', (await p.locator('#v-customer [data-act="report"]').count()) === 1);
+  await p.evaluate(() => localStorage.setItem('ob2_pin', '1234')); await p.reload(); await p.waitForSelector('#pinlock:not([hidden])', { timeout: 15000 });
+  await p.fill('#pin-in', '9999'); ok('E3: wrong PIN rejected', (await p.locator('#pin-msg').textContent()).includes('שגוי'));
+  await p.fill('#pin-in', '1234'); await p.waitForSelector('#pinlock', { state: 'hidden', timeout: 3000 }); ok('E3: correct PIN unlocks', true); await p.evaluate(() => localStorage.removeItem('ob2_pin'));
   await settle(p);
 
   await ctx.close(); await b.close();

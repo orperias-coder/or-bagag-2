@@ -110,7 +110,8 @@ function renderCustomers() {
   const v = $('#v-customers'); v.hidden = false;
   const q = S.q.trim().toLowerCase();
   let list = live(D.customers);
-  if (q) list = list.filter((c) => [c.name, c.phone, c.address, c.notes].some((x) => (x || '').toLowerCase().includes(q)) || jobsOf(c.id).some((j) => (j.title || '').toLowerCase().includes(q)));
+  if (q) list = list.filter((c) => [c.name, c.phone, c.address, c.notes].some((x) => (x || '').toLowerCase().includes(q)) || jobsOf(c.id).some((j) => [j.title, j.problem, j.visit_notes, j.work_notes].some((x) => (x || '').toLowerCase().includes(q))   // חיפוש בכל דבר: גם הערות, סעיפי הצעות, ממצאים ומשימות
+    || quotesOf(j.id).some((qq) => String(qq.number || '').includes(q) || (qq.items || []).some((i) => ((i.title || '') + ' ' + (i.description || '')).toLowerCase().includes(q))) || findingsOf(j.id).some((f) => (f.title || '').toLowerCase().includes(q)) || tasksOf(j.id).some((t) => (t.title || '').toLowerCase().includes(q))));
   list.sort((a, b) => new Date(jobsOf(b.id)[0]?.updated_at || b.updated_at) - new Date(jobsOf(a.id)[0]?.updated_at || a.updated_at));
   $('#cust-list').innerHTML = list.length ? list.map(custRow).join('') : `<div class="empty">${q ? 'לא נמצא' : 'אין לקוחות עדיין'}</div>`;
 }
@@ -134,13 +135,15 @@ function renderWork() {
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || c.address || '')}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}</div>`;
   }).join('')).join('') || (wHtml || nqHtml || mHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
 }
+const normPhone = (p) => String(p || '').replace(/\D/g, '').replace(/^972/, '0');
+const dupOf = (c) => normPhone(c.phone).length >= 9 ? live(D.customers).find((x) => x.id !== c.id && normPhone(x.phone) === normPhone(c.phone)) : null;
 const roofLine = (c) => c && c.roof ? [c.roof.tiles, c.roof.access, c.roof.slope, c.roof.floors ? c.roof.floors + ' קומות' : ''].filter(Boolean).map(esc).join(' · ') : '';
 function renderCustomer() {
   const v = $('#v-customer'); v.hidden = false;
   const c = custOf(S.params.id); if (!c) return v.innerHTML = '<div class="empty">לקוח לא נמצא</div>';
   const js = jobsOf(c.id);
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button>
-  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="https://wa.me/972${esc(String(c.phone).replace(/\D/g, '').replace(/^0/, ''))}" target="_blank">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}<div class="actions"><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
+  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="https://wa.me/972${esc(String(c.phone).replace(/\D/g, '').replace(/^0/, ''))}" target="_blank">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}${dupOf(c) ? `<div class="alert" style="margin-top:8px"><span>יש לקוח נוסף עם אותו טלפון: <b>${esc(dupOf(c).name)}</b></span><button class="btn sm" data-merge="${dupOf(c).id}">מזג לכאן</button></div>` : ''}<div class="actions"><button class="btn sm ghost" data-act="report">דוח ייעוץ</button><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
   <div class="section">עבודות · ${js.length}</div>
   <div class="list">${js.map((j) => { const qs = quotesOf(j.id); const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(j.title || (qs[0] && qs[0].items && qs[0].items[0] && qs[0].items[0].title) || 'עבודה')}</div><div class="sub">${dateHe(j.created_at)}${qs.length ? ' · ' + qs.length + ' הצעות' : ''}${j.price_agreed ? ' · ' + money(j.price_agreed) : ''}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}<span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`; }).join('') || '<div class="empty">אין עבודות</div>'}</div>`;
@@ -336,6 +339,13 @@ function renderMore() {
   <div class="card" id="failed-card"><b>כתיבות שהענן דחה</b> · <span id="failed-n">…</span><div class="dim">שינויים שהענן לא קיבל נשמרים כאן עם השגיאה, לא נזרקים.</div></div>`;
   DB._failed().then((f) => { const n = $('#failed-n'); if (n) n.textContent = f.length; if (f.length && $('#failed-card')) $('#failed-card').innerHTML += f.slice(0, 10).map((x) => `<div class="qitem"><span>${esc(x.table || x.op)} · ${dateHe(x.failedAt)}</span><span class="dim" style="font-size:12px">${esc(String(x.error).slice(0, 90))}</span></div>`).join(''); });
 }
+const pinSet = () => { try { return !!localStorage.getItem(PIN_KEY); } catch (e) { return false; } };
+function pinLock() {   // נעילה רכה: קוד במכשיר, לא בענן. אחרי 5 שגיאות מציע להתנתק ולהיכנס מחדש
+  const pin = (() => { try { return localStorage.getItem(PIN_KEY); } catch (e) { return null; } })(); if (!pin) return;
+  const l = $('#pinlock'); l.hidden = false; const inp = $('#pin-in'); inp.value = ''; let bad = 0; setTimeout(() => inp.focus(), 50);
+  const tryPin = () => { if (inp.value === pin) { l.hidden = true; return; } bad++; inp.value = ''; $('#pin-msg').textContent = bad >= 5 ? 'שכחת? התנתק והתחבר מחדש עם הסיסמה.' : 'קוד שגוי'; $('#pin-forgot').hidden = bad < 5; };
+  inp.oninput = () => { if (inp.value.length >= pin.length) tryPin(); }; $('#pin-go').onclick = tryPin; $('#pin-forgot').onclick = async () => { try { localStorage.removeItem(PIN_KEY); } catch (e) {} await sb.auth.signOut(); location.reload(); };
+}
 function renderSettings() {
   const v = $('#v-settings'); v.hidden = false; const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl();
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="section">פרטי העסק (מופיעים בהצעה)</div><div class="card sheet" style="max-height:none">
@@ -344,6 +354,7 @@ function renderSettings() {
   <div class="row2"><label style="flex:1">מע"מ %<input id="s-vat" type="number" dir="ltr" value="${t.vatRate ?? 18}"></label><label style="flex:1">תוקף (ימים)<input id="s-valid" type="number" dir="ltr" value="${t.validityDays || 30}"></label></div>
   <label>תנאי תשלום<input id="s-terms" value="${esc(t.paymentTerms || '30% מקדמה במועד החתימה, 70% בסיום העבודה')}"></label><label>הערות קבועות להצעה<textarea id="s-notes" rows="3">${esc(t.standardNotes || '')}</textarea></label><label>נוסח "עבודות בלתי-צפויות"<textarea id="s-unf" rows="3">${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</textarea></label>
   <button class="btn pri" data-act="save-settings">שמור</button></div>
+  <div class="section">נעילה בקוד (במכשיר הזה)</div><div class="card"><div class="dim">${pinSet() ? 'הנעילה פעילה: בכל פתיחה מבקשת קוד. להשאיר ריק וללחוץ כדי לבטל.' : 'קוד של 4-6 ספרות שיתבקש בכל פתיחה של האפליקציה במכשיר הזה.'}</div><div class="row2" style="margin-top:8px"><input id="s-pin" type="password" inputmode="numeric" dir="ltr" placeholder="קוד" style="flex:1"><button class="btn sm" data-act="set-pin">${pinSet() ? 'עדכן / בטל' : 'הפעל'}</button></div></div>
   <div class="section">עובדים וקבלני משנה</div><div class="card">${workers().map((x, i) => `<div class="qitem" data-worker-edit="${i}" style="cursor:pointer"><div><div class="t">${esc(x.name)}</div><div class="dim">${esc(x.phone || '')}${x.rate ? ' · ' + money(x.rate) + ' ליום' : ''} · ${esc(x.type || '')}</div></div></div>`).join('') || '<div class="dim">מי עובד איתך: שם, תעריף יומי, מורשה/פטור. בעבודה מסמנים מי עבד וכמה ימים.</div>'}<div class="actions"><button class="btn sm" data-act="worker-add">הוסף</button></div></div>`;
 }
 function renderCatalog() {
@@ -364,10 +375,11 @@ function backupToFile() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = 'or-bagag-2-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click(); toast('הגיבוי ירד לקבצים');
 }
 function renderAlerts() {
-  const open = (D.alerts || []).filter((x) => !x.seen_at); let bar = $('#alerts');
-  if (!open.length) { if (bar) bar.remove(); return; }
+  const open = (D.alerts || []).filter((x) => !x.seen_at); let bar = $('#alerts'); const noInv = live(D.payments).filter((p) => !p.invoice_issued).length;
+  if (!open.length && !noInv) { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement('div'); bar.id = 'alerts'; $('#views').before(bar); }
-  bar.innerHTML = open.map((x) => `<div class="alert"><span>${esc(x.message)}</span><button class="btn sm" data-seen="${x.id}">ראיתי</button></div>`).join('');
+  bar.innerHTML = open.map((x) => `<div class="alert"><span>${esc(x.message)}</span><button class="btn sm" data-seen="${x.id}">ראיתי</button></div>`).join('')
+    + (noInv && S.view !== 'money' ? `<div class="alert warn" data-tab="money" style="cursor:pointer"><span>${noInv} תשלומים בלי חשבונית — להוציא בחשבונית ירוקה ולסמן</span><b>›</b></div>` : '');   // "חשבונית עקשנית": עד שמסמנים
 }
 
 // ---------- גיליונות וטפסים ----------
@@ -401,12 +413,14 @@ function openJobForm(customerId) {
 }
 const NEXT = { lead: ['visit', 'quote'], visit: ['quote'], quote: ['sent'], sent: ['approved', 'lost'], approved: ['doing'], doing: ['paid'], paid: [], lost: ['lead'] };
 const NEXT_HE = { visit: 'נקבע ביקור', quote: 'בונים הצעה', sent: 'נשלחה ללקוח', approved: 'הלקוח אישר', doing: 'התחלנו', paid: 'שולם וסגור', lost: 'לא יצא', lead: 'לפתוח מחדש' };
+const PIN_KEY = 'ob2_pin';
 const WA_MAINT = 'שלום, זה אור מאור בגג. עברה שנה מהעבודה אצלכם. לפני החורף כדאי בדיקת תחזוקה קצרה לגג (מרזבים, איטום, רוכבים). אשמח לתאם.';
 const WA_FOLLOWUP = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
 const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
 function renderTrash() {
   const v = $('#v-trash'); v.hidden = false;
-  const rows = [['customers', 'לקוח', D.customers.filter((c) => c.deleted_at).map((c) => [c, c.name])], ['jobs', 'עבודה', D.jobs.filter((j) => j.deleted_at).map((j) => [j, (j.title || 'עבודה') + ' · ' + (custOf(j.customer_id)?.name || '')])], ['quotes', 'הצעה', D.quotes.filter((q) => q.deleted_at).map((q) => [q, 'הצעה ' + (q.number || '') + ' · ' + (custOf((D.jobs.find((j) => j.id === q.job_id) || {}).customer_id)?.name || '')])]];
+  const rows = [['customers', 'לקוח', D.customers.filter((c) => c.deleted_at).map((c) => [c, c.name])], ['jobs', 'עבודה', D.jobs.filter((j) => j.deleted_at).map((j) => [j, (j.title || 'עבודה') + ' · ' + (custOf(j.customer_id)?.name || '')])], ['quotes', 'הצעה', D.quotes.filter((q) => q.deleted_at).map((q) => [q, 'הצעה ' + (q.number || '') + ' · ' + (custOf((D.jobs.find((j) => j.id === q.job_id) || {}).customer_id)?.name || '')])],
+    ['tasks', 'משימה', D.tasks.filter((t) => t.deleted_at).map((t) => [t, t.title])], ['findings', 'ממצא', D.findings.filter((f) => f.deleted_at).map((f) => [f, f.title])], ['expenses', 'הוצאה', D.expenses.filter((e) => e.deleted_at).map((e) => [e, (e.title || e.worker || EXP_HE[e.kind] || '') + ' · ' + money(e.amount)])]];
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="section">סל המיחזור</div><div class="dim" style="margin-bottom:8px">שום דבר לא נמחק באמת. לחיצה על "שחזר" מחזירה.</div><div class="list">` +
     rows.flatMap(([t, he, arr]) => arr.map(([x, label]) => `<div class="row"><div class="main"><div class="name">${esc(label)}</div><div class="sub">${he} · הועבר לסל ${dateHe(x.deleted_at)}</div></div><button class="btn sm" data-restore="${t}:${x.id}">שחזר</button></div>`)).join('') + `</div>` || '';
   if (!rows.some(([, , a]) => a.length)) v.innerHTML += '<div class="empty">הסל ריק</div>';
@@ -414,7 +428,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],[data-exp],[data-exp-receipt],[data-worker-edit],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],[data-exp],[data-exp-receipt],[data-worker-edit],[data-merge],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
   try { DB.used(t.dataset.act || (t.dataset.tab && 'tab:' + t.dataset.tab) || (t.dataset.stage && 'stage:' + t.dataset.stage) || (t.dataset.new && 'new:' + t.dataset.new) || t.id || 'row'); } catch (e) {}
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
@@ -433,6 +447,11 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.new === 'customer') openCustomerForm();
   else if (t.dataset.new === 'job') pickCustomer((cid) => openJobForm(cid));
   else if (t.dataset.act === 'edit-customer' && cur) openCustomerForm(cur);
+  else if (t.dataset.merge && cur) { const o = custOf(t.dataset.merge); if (!o) return; confirmAsk('למזג את "' + (o.name || '') + '" לתוך "' + (cur.name || '') + '"?', 'העבודות, ההצעות והתמונות שלו יעברו לכאן. הכרטיס הכפול עובר לסל (אפשר לשחזר).', async () => {
+    for (const j of D.jobs.filter((j) => j.customer_id === o.id)) await DB.save('jobs', { id: j.id, customer_id: cur.id }); for (const m of D.media.filter((m) => m.customer_id === o.id)) await DB.save('media', { id: m.id, customer_id: cur.id });
+    const patch = {}; for (const k of ['address', 'notes', 'roof']) if (!cur[k] && o[k]) patch[k] = o[k]; if (Object.keys(patch).length) await DB.save('customers', { id: cur.id, ...patch }); await DB.trash('customers', o.id); render(); toast('מוזג'); }); }
+  else if (t.dataset.act === 'report' && cur) { const u = new URL('https://orperias-coder.github.io/or-bagag-report/'); u.searchParams.set('new', '1'); u.searchParams.set('client', cur.name || ''); u.searchParams.set('phone', cur.phone || ''); u.searchParams.set('address', cur.address || ''); window.open(u.toString(), '_blank'); }
+  else if (t.dataset.act === 'set-pin') { const v = $('#s-pin').value.trim(); if (v && !/^\d{4,6}$/.test(v)) return toast('קוד של 4-6 ספרות'); try { if (v) localStorage.setItem(PIN_KEY, v); else localStorage.removeItem(PIN_KEY); } catch (e) {} toast(v ? 'הנעילה הופעלה במכשיר הזה' : 'הנעילה בוטלה'); render(); }
   else if (t.dataset.act === 'new-job' && cur) openJobForm(cur.id);
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
   else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה');
@@ -496,7 +515,7 @@ window.addEventListener('online', setNet); window.addEventListener('offline', se
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('#login').hidden = false; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = true); return; }
-  $('#login').hidden = true; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = false); DB.onChange(setNet); setNet();
+  $('#login').hidden = true; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = false); DB.onChange(setNet); setNet(); pinLock();
   cacheLoad(); render();
   try { await DB.loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
 }
