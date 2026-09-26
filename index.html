@@ -86,6 +86,15 @@
 <div class="row2"><label style="flex:1">כמות / מטראז'<input id="fi-qty" type="number" inputmode="decimal" dir="ltr" value="1"></label><label style="flex:1">יחידה<input id="fi-unit" placeholder="מטר / יח'"></label><label style="flex:1">מחיר ליח'<input id="fi-ppu" type="number" inputmode="decimal" dir="ltr"></label></div>
 <button class="btn pri" id="fi-save">שמור ממצא</button></div></template>
 <template id="t-photo-kind"><div class="sheet"><div class="sheet-h"><b>איזו תמונה?</b><button class="btn sm ghost" data-close>סגור</button></div><div class="row2"><button class="btn" data-kind="roof">גג</button><button class="btn" data-kind="outside">חוץ</button><button class="btn" data-kind="interior">רטיבות בפנים</button><button class="btn ghost" data-kind="">בלי סיווג</button></div></div></template>
+<template id="t-expense-form"><div class="sheet"><div class="sheet-h"><b>הוצאה לעבודה</b><button class="btn sm ghost" data-close>סגור</button></div>
+<label>סוג<select id="ex-kind"><option value="material">חומרים</option><option value="sub">קבלן משנה</option><option value="worker">עובד</option><option value="other">אחר</option></select></label>
+<div class="row2" id="ex-wrow"><label style="flex:1">מי<select id="ex-worker"></select></label><label style="flex:1">ימים<input id="ex-days" type="number" inputmode="decimal" dir="ltr"></label></div>
+<label>מה<input id="ex-title" autocomplete="off" placeholder="למשל: פחים מהספק"></label><label>סכום<input id="ex-amount" type="number" inputmode="decimal" dir="ltr"></label>
+<label id="ex-rrow" style="flex-direction:row;align-items:center;gap:8px"><input id="ex-receipt" type="checkbox" style="width:auto">התקבלה חשבונית / קבלה</label>
+<div class="row2"><button class="btn pri" id="ex-save">שמור</button><button class="btn ghost" id="ex-del" hidden>לסל</button></div></div></template>
+<template id="t-worker-form"><div class="sheet"><div class="sheet-h"><b>עובד / קבלן משנה</b><button class="btn sm ghost" data-close>סגור</button></div>
+<label>שם<input id="wk-name" autocomplete="off"></label><label>טלפון<input id="wk-phone" type="tel" dir="ltr"></label><div class="row2"><label style="flex:1">תעריף יומי<input id="wk-rate" type="number" inputmode="decimal" dir="ltr"></label><label style="flex:1">סוג<select id="wk-type"><option>מורשה</option><option>פטור</option><option>שכיר</option></select></label></div>
+<div class="row2"><button class="btn pri" id="wk-save">שמור</button><button class="btn ghost" id="wk-del" hidden>הסר</button></div></div></template>
 <template id="t-confirm"><div class="sheet"><b id="confirm-title"></b><div class="dim" id="confirm-msg"></div><div class="row2"><button class="btn" data-close>בטל</button><button class="btn danger" id="confirm-yes">כן</button></div></div></template>
 <template id="t-pick-customer"><div class="sheet"><div class="sheet-h"><b>לאיזה לקוח?</b><button class="btn sm ghost" data-close>סגור</button></div><input id="pick-search" placeholder="חיפוש" autocomplete="off"><div class="list" id="pick-list"></div></div></template>
 <input id="photo-in" type="file" accept="image/*" multiple capture="environment" hidden>

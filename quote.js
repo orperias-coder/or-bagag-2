@@ -10,16 +10,16 @@ const Q = {
     return { sum, disc, before, vat, total: before + vat, advance: (before + vat) * 0.3 };
   },
   tpl() { return (D.settings && D.settings.quote_template) || {}; },
-  async create(job) {
+  async create(job, extra = {}) {
     const t = Q.tpl(); let number = null;
     try { if (navigator.onLine) { const { data } = await sb.rpc('next_quote_number'); number = data || null; } } catch (e) {}
     const items = findingsOf(job.id).map((f) => ({ id: DB.uuid(), title: f.title, description: f.description || '', qty: Number(f.qty) || 1, unit: f.unit || '', price_per_unit: Number(f.price_per_unit) || 0, total: Math.round((Number(f.qty) || 1) * (Number(f.price_per_unit) || 0)), urgency: '', visible: true, finding_id: f.id }));
-    const row = await DB.save('quotes', { job_id: job.id, number, status: 'draft', version: 1, items, discount: null,
+    const row = await DB.save('quotes', { job_id: job.id, number, status: 'draft', version: 1, items: extra.addon ? [] : items, addon: !!extra.addon, discount: null,
       vat_rate: Number(t.vatRate ?? 18), validity_days: Number(t.validityDays || 30),
       payment_terms: t.paymentTerms || '30% מקדמה במועד החתימה, 70% בסיום העבודה',
       notes: t.standardNotes || '', options: { unforeseen: true, signatures: true, urgency: !!t.showUrgency }, total_before_vat: 0, total: 0 });
     if (['lead', 'visit'].includes(job.stage)) await DB.stage(job.id, 'quote');
-    return items.length ? Q.save(row, { items }, { noVersion: true }) : row;
+    return items.length && !extra.addon ? Q.save(row, { items }, { noVersion: true }) : row;
   },
   cur(id) { return live(D.quotes).find((x) => x.id === id); },
   async save(q, patch, opts = {}) {
@@ -54,7 +54,7 @@ function renderQuote() {
   const j = D.jobs.find((x) => x.id === q.job_id) || {}, c = custOf(j.customer_id) || {}, k = Q.calc(q);
   const items = q.items || [];
   v.innerHTML = `<button class="back" data-back>‹ ${esc(c.name || 'חזרה')}</button>
-  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>הצעה <span id="q-number">${esc(q.number || 'טיוטה')}</span></b> · גרסה <span id="q-version">${q.version || 1}</span></div><span class="chip ${q.status === 'draft' ? 'quote' : q.status === 'rejected' ? 'lost' : q.status === 'accepted' ? 'approved' : 'sent'}">${QSTAT[q.status] || q.status}</span></div>
+  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>${q.addon ? 'תוספת' : 'הצעה'} <span id="q-number">${esc(q.number || 'טיוטה')}</span></b> · גרסה <span id="q-version">${q.version || 1}</span></div><span class="chip ${q.status === 'draft' ? 'quote' : q.status === 'rejected' ? 'lost' : q.status === 'accepted' ? 'approved' : 'sent'}">${QSTAT[q.status] || q.status}</span></div>
   <div class="dim">${esc(c.name)}${c.address ? ' · ' + esc(c.address) : ''}${q.sent_at ? ' · נשלחה ' + dateHe(q.sent_at) : ''} · בתוקף עד ${dateHe(Q.validUntil(q))}</div></div>
   <div class="section">סעיפים · ${items.length}</div>
   <div class="card" id="q-items">${items.map((i, n) => `<div class="qitem" data-idx="${n}"><div style="flex:1;min-width:0"><div class="t">${n + 1}. ${esc(i.title)}</div>${i.description ? `<div class="d">${esc(i.description)}</div>` : ''}<div class="dim">${i.qty} ${esc(i.unit || '')} × ${money(i.price_per_unit)}${i.urgency ? ' · דחיפות: ' + esc(i.urgency) : ''}</div></div><div style="text-align:left"><b>${money(i.total)}</b><div class="row2" style="margin-top:4px"><button class="btn sm ghost" data-act="edit-item" data-idx="${n}">ערוך</button><button class="btn sm ghost" data-act="del-item" data-idx="${n}">הסר</button></div></div></div>`).join('') || '<div class="empty">אין סעיפים עדיין</div>'}
@@ -64,7 +64,7 @@ function renderQuote() {
   <div class="qitem"><span>סה"כ לפני מע"מ</span><b>${money(k.before)}</b></div><div class="qitem"><span>מע"מ ${q.vat_rate}%</span><b>${money(k.vat)}</b></div>
   <div class="total"><span>סה"כ לתשלום</span><span>${money(k.total)}</span></div><div class="qitem dim"><span>מקדמה 30%</span><b>${money(k.advance)}</b></div></div>
   <div class="card"><label class="dim" for="q-terms">תנאי תשלום</label><input id="q-terms" class="txt" value="${esc(q.payment_terms || '')}"><label class="dim" for="q-notes" style="margin-top:8px;display:block">הערות להצעה</label><textarea id="q-notes" class="txt" rows="3">${esc(q.notes || '')}</textarea></div>
-  <div class="actions"><button class="btn pri" data-act="pdf">PDF / הדפסה</button>${q.status === 'draft' ? '<button class="btn" data-act="mark-sent">נשלחה ללקוח</button>' : `<button class="btn" data-act="versions">גרסאות (${q.version})</button>`}<button class="btn ghost" data-act="share">טקסט לוואטסאפ</button><button class="btn ghost danger" data-act="trash-quote">לסל</button></div>
+  <div class="actions"><button class="btn pri" data-act="pdf">PDF / הדפסה</button>${q.status === 'draft' ? '<button class="btn" data-act="mark-sent">נשלחה ללקוח</button>' : `<button class="btn" data-act="versions">גרסאות (${q.version})</button>`}${q.addon && q.status !== 'accepted' ? '<button class="btn pri" data-act="accept-addon">הלקוח אישר את התוספת</button>' : ''}<button class="btn ghost" data-act="share">טקסט לוואטסאפ</button><button class="btn ghost danger" data-act="trash-quote">לסל</button></div>
   <div id="v-versions" hidden></div>`;
   const opts = { noVersion: q.status === 'draft' };
   $('#q-terms', v).onblur = (e) => { if (e.target.value !== (q.payment_terms || '')) Q.save(q, { payment_terms: e.target.value }, opts).then(render); };
@@ -113,6 +113,7 @@ async function quoteAction(act, t) {
   else if (act === 'discount') openDiscount(q);
   else if (act === 'mark-sent') { if (!(q.items || []).length) return toast('אין סעיפים בהצעה'); await Q.markSent(q); render(); toast('סומן: נשלחה. סופרים ימים.'); }
   else if (act === 'versions') renderVersions(q);
+  else if (act === 'accept-addon') { if (!(q.items || []).length) return toast('אין סעיפים בתוספת'); const k = Q.calc(q); await Q.save(q, { status: 'accepted' }, { noVersion: true }); const j = D.jobs.find((x) => x.id === q.job_id); if (j) { await DB.save('jobs', { id: j.id, price_agreed: Number(j.price_agreed || 0) + k.total }); await tasksFromQuote(j, q); } render(); toast('התוספת נוספה לסכום העבודה'); }
   else if (act === 'share') { const text = Q.shareText(q); if (navigator.share) { try { await navigator.share({ text }); } catch (e) {} } else { await navigator.clipboard.writeText(text); toast('הטקסט הועתק'); } }
   else if (act === 'pdf') show('print', { id: q.id });
   else if (act === 'trash-quote') confirmAsk('להעביר את ההצעה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('quotes', q.id); back(); });

@@ -7,7 +7,7 @@ mkdir -p "$OUT"
 F="$OUT/app2-$(date +%Y-%m-%d).json"; T=$(mktemp)
 echo "{\"exportedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" > "$T"
 ok=1
-for tb in customers jobs quotes quote_versions payments media settings events alerts daily_counts tasks findings; do
+for tb in customers jobs quotes quote_versions payments media settings events alerts daily_counts tasks findings expenses; do
   R=$(/opt/homebrew/bin/supabase db query --linked "select coalesce(json_agg(t),'[]'::json)::text as j from app2.$tb t" 2>/dev/null)
   J=$(printf '%s' "$R" | python3 -c 'import sys,json; s=sys.stdin.read(); d=json.loads(s[s.index("{"):]); print(d["rows"][0]["j"])' 2>/dev/null)
   if [ -z "$J" ]; then ok=0; echo "$(date '+%F %T') FAILED table $tb" >> /tmp/or-bagag-2-backup.log; J='null'; fi

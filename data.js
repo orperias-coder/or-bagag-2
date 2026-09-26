@@ -100,7 +100,7 @@ const DB = (() => {
   }
   async function loadAll() {
     const { data: { user } } = await sb.auth.getUser(); D.uid = user && user.id;
-    const sel = { customers: '*', jobs: '*', quotes: '*', tasks: '*', findings: '*', quote_versions: 'id,quote_id,version,snapshot,created_at', payments: '*',
+    const sel = { customers: '*', jobs: '*', quotes: '*', tasks: '*', findings: '*', expenses: '*', quote_versions: 'id,quote_id,version,snapshot,created_at', payments: '*',
       media: 'id,job_id,customer_id,kind,tag,storage_path,thumb_data,taken_at,caption,created_at,updated_at,deleted_at', alerts: '*' };
     const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'alerts' ? 'at' : t === 'quote_versions' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
     for (const [t, r] of res) { if (r.error) { if (t === 'alerts') { D.alerts = []; continue; } throw r.error; } D[t] = r.data; }

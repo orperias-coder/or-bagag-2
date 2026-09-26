@@ -93,3 +93,4 @@ button,input{font-family:inherit;font-size:inherit}
 #alerts{max-width:760px;margin:10px auto 0;padding:0 14px}.alert{display:flex;gap:10px;align-items:center;background:var(--red-l);color:var(--red);border:1px solid #e8b9b5;border-radius:12px;padding:10px 12px;margin-bottom:6px;font-size:14.5px}.alert span{flex:1}
 @media (min-width:900px){#alerts{max-width:1100px}}
 #lightbox .lb-tags{justify-content:center}#lightbox .lb-tags .btn{flex:none}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}

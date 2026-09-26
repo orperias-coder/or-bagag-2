@@ -15,7 +15,7 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], settings: null, uid: null, loadedAt: 0 };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], expenses: [], settings: null, uid: null, loadedAt: 0 };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
@@ -25,6 +25,10 @@ const quotesOf = (jid) => live(D.quotes).filter((q) => q.job_id === jid).sort((a
 const paymentsOf = (jid) => live(D.payments).filter((p) => p.job_id === jid);
 const mediaOf = (jid) => live(D.media).filter((m) => m.job_id === jid);
 const custOf = (id) => D.customers.find((c) => c.id === id);
+const expensesOf = (jid) => live(D.expenses).filter((e) => e.job_id === jid);
+const tasksOf = (jid) => live(D.tasks).filter((t) => t.job_id === jid).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+const EXP_HE = { material: 'חומרים', sub: 'קבלן משנה', worker: 'עובד', other: 'אחר' };
+const workers = () => ((D.settings && D.settings.workers) || []);
 const findingsOf = (jid) => live(D.findings).filter((f) => f.job_id === jid).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
 // ---------- ניווט ----------
@@ -119,13 +123,16 @@ function renderWork() {
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || '')}${d >= 7 ? ' · <b style="color:var(--red)">תזכורת אחרונה</b>' : ''}</div></div><span class="chip days ${d >= 7 ? 'last' : ''}">${d} ימים</span>${c.phone ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}" onclick="event.stopPropagation()">וואטסאפ</a>` : ''}</div>`; }).join('') : '';
   const needQuote = open.filter((j) => j.stage === 'visit' && j.visit_at && (Date.now() - new Date(j.visit_at)) > 864e5 && !quotesOf(j.id).length);
   const nqHtml = needQuote.length ? `<div class="section">ממתינות להצעה · ${needQuote.length}</div>` + needQuote.map((j) => { const c = custOf(j.customer_id) || {}; return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">ביקור ${dateHe(j.visit_at)} · ${findingsOf(j.id).length} ממצאים</div></div><span class="chip days">${daysSince(j.visit_at)} ימים</span></div>`; }).join('') : '';
+  const yearAgo = live(D.jobs).filter((j) => j.stage === 'paid' && (j.finished_at || j.paid_at) && daysSince(j.finished_at || j.paid_at) >= 300 && daysSince(j.finished_at || j.paid_at) <= 450 && !j.maint_reminded_at);
+  const mHtml = yearAgo.length ? `<div class="section">תחזוקה לפני החורף · ${yearAgo.length}</div>` + yearAgo.map((j) => { const c = custOf(j.customer_id) || {}; const wEnd = j.warranty_months && j.finished_at ? new Date(new Date(j.finished_at).setMonth(new Date(j.finished_at).getMonth() + j.warranty_months)) : null;
+    return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || '')} · הסתיים ${dateHe(j.finished_at || j.paid_at)}${wEnd ? ' · אחריות עד ' + dateHe(wEnd) : ''}</div></div>${c.phone ? `<a class="btn sm" style="text-decoration:none;display:inline-flex;align-items:center" target="_blank" href="${waLink(c.phone, WA_MAINT)}" onclick="event.stopPropagation()">וואטסאפ</a>` : ''}</div>`; }).join('') : '';
   const rest = open.filter((j) => !waiting.includes(j) && !needQuote.includes(j));
   const groups = STAGES.filter((s) => s !== 'paid').map((s) => [s, rest.filter((j) => j.stage === s)]).filter(([, a]) => a.length);
-  $('#cust-list').innerHTML = wHtml + nqHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
+  $('#cust-list').innerHTML = wHtml + nqHtml + mHtml + groups.map(([s, arr]) => `<div class="section">${STAGE_HE[s]} · ${arr.length}</div>` + arr.map((j) => {
     const c = custOf(j.customer_id) || {}; if (q && !(c.name || '').toLowerCase().includes(q)) return '';
     const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="avatar">${esc((c.name || '?')[0])}</div><div class="main"><div class="name">${esc(c.name)}</div><div class="sub">${esc(j.title || c.address || '')}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}</div>`;
-  }).join('')).join('') || (wHtml || nqHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
+  }).join('')).join('') || (wHtml || nqHtml || mHtml ? '' : '<div class="empty">אין עבודות פתוחות</div>');
 }
 const roofLine = (c) => c && c.roof ? [c.roof.tiles, c.roof.access, c.roof.slope, c.roof.floors ? c.roof.floors + ' קומות' : ''].filter(Boolean).map(esc).join(' · ') : '';
 function renderCustomer() {
@@ -159,10 +166,50 @@ function renderJob() {
   <div class="section">ממצאים מהגג · ${findingsOf(j.id).length}</div><div class="card">${findingsOf(j.id).map((f) => { const m = f.media_id && D.media.find((x) => x.id === f.media_id); return `<div class="qitem" data-finding="${f.id}" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:center;min-width:0">${m && m.thumb_data ? `<img src="${m.thumb_data}" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">` : ''}<div><div class="t">${esc(f.title)}</div><div class="dim">${f.qty} ${esc(f.unit || '')}${f.price_per_unit ? ' × ' + money(f.price_per_unit) : ''}</div></div></div><b>${f.price_per_unit ? money(f.qty * f.price_per_unit) : ''}</b></div>`; }).join('') || '<div class="dim">על הגג: כל ממצא עם תמונה וכמות, וההצעה בערב כבר מלאה.</div>'}<div class="actions"><button class="btn sm pri" data-act="new-finding">ממצא חדש</button>${findingsOf(j.id).length ? '<button class="btn sm ghost" data-act="clear-findings">נקה ממצאים</button>' : ''}</div></div>
   <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
   ${(j.price_agreed || ps.length || ['approved', 'doing', 'paid'].includes(j.stage)) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-inv="${p.id}">הוצאתי חשבונית</button>`}</span><b>${money(p.amount)}</b></div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="add-payment">רשום תשלום</button></div></div>` : ''}
+  ${['approved', 'doing', 'paid'].includes(j.stage) ? execHtml(j) : ''}
   </div><div>
   <div class="section">תמונות · ${ms.length}</div><div class="card">${[['roof', 'גג'], ['outside', 'חוץ'], ['interior', 'רטיבות בפנים'], ['', 'אחר']].map(([k, he]) => { const g = ms.filter((m) => (m.tag || '') === k); return g.length ? `<div class="dim" style="margin:6px 0 4px">${he} · ${g.length}</div><div class="thumbs">${g.map((m) => `<div class="th ${m.storage_path ? '' : 'pending'}" data-media="${m.id}">${m.thumb_data ? `<img src="${m.thumb_data}" alt="">` : `<div class="noimg">תמונה</div>`}${m.storage_path ? '' : '<span class="pend">לא עלה</span>'}</div>`).join('')}</div>` : ''; }).join('')}<div class="actions"><button class="btn sm pri" data-act="add-photos">צלם / הוסף תמונות</button></div></div>
   </div></div>`;
-  bindJobNotes(j);
+  bindJobNotes(j); bindJobFields(j);
+}
+function execHtml(j) {   // מקטע "ביצוע": משימות מהסעיפים, יומן-עבודה, הוצאות ורווח, תוספת, סיכום ללקוח
+  const ts = tasksOf(j.id), done = ts.filter((t) => t.done_at), es = expensesOf(j.id), spent = es.reduce((a, e) => a + Number(e.amount || 0), 0);
+  const d = (t) => t ? dayKey(t) : '';
+  return `<div class="section">ביצוע · ${done.length}/${ts.length} בוצעו</div><div class="card">${ts.map((t) => `<div class="qitem" data-task="${t.id}" style="cursor:pointer;align-items:center"><span style="${t.done_at ? 'text-decoration:line-through;color:var(--dim)' : ''}">${esc(t.title)}</span>${t.done_at ? '<span class="dim">בוצע</span>' : `<button class="btn sm" data-task-done="${t.id}">בוצע</button>`}</div>`).join('') || '<div class="dim">כשהלקוח מאשר הצעה, כל סעיף הופך למשימה כאן.</div>'}
+  <div class="actions"><button class="btn sm" data-new="task">משימה</button><button class="btn sm" data-act="addon">תוספת</button><button class="btn sm ghost" data-act="summary">סיכום ללקוח</button></div>
+  <div class="row2" style="margin-top:10px"><label style="flex:1">התחלה<input type="date" dir="ltr" data-field="started_at" value="${d(j.started_at)}"></label><label style="flex:1">סיום<input type="date" dir="ltr" data-field="finished_at" value="${d(j.finished_at)}"></label></div>
+  <div class="row2"><label style="flex:1">ימי עבודה<input type="number" inputmode="numeric" dir="ltr" data-field="work_days" value="${j.work_days ?? ''}"></label><label style="flex:1">אחריות (חודשים)<input type="number" inputmode="numeric" dir="ltr" data-field="warranty_months" value="${j.warranty_months ?? ''}"></label></div>
+  <label>יומן עבודה<textarea class="txt" rows="2" data-field="work_notes" placeholder="מה נעשה בכל יום, מה נשאר">${esc(j.work_notes || '')}</textarea></label></div>
+  <div class="section">הוצאות · ${money(spent) || '0 ₪'}</div><div class="card">${es.map((e) => `<div class="qitem" data-exp="${e.id}" style="cursor:pointer;align-items:center"><div><div class="t">${esc(e.title || EXP_HE[e.kind] || '')}</div><div class="dim">${EXP_HE[e.kind] || ''}${e.worker ? ' · ' + esc(e.worker) : ''}${e.days ? ' · ' + e.days + ' ימים' : ''}${['sub', 'worker'].includes(e.kind) ? (e.receipt ? ' · חשבונית התקבלה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-exp-receipt="${e.id}">התקבלה</button>`) : ''}</div></div><b>${money(e.amount)}</b></div>`).join('')}
+  ${j.price_agreed ? `<div class="total"><span>רווח משוער</span><span style="color:${j.price_agreed - spent >= 0 ? 'var(--ok)' : 'var(--red)'}">${money(j.price_agreed - spent)}</span></div>` : ''}<div class="actions"><button class="btn sm" data-act="add-expense">הוצאה</button></div></div>`;
+}
+function bindJobFields(j) {   // שדות-ביצוע: שמירה אוטומטית בשינוי
+  document.querySelectorAll('#v-job [data-field]').forEach((el) => { el.onchange = async () => { const f = el.dataset.field; let val = el.value; if (['started_at', 'finished_at'].includes(f)) val = val ? new Date(val + 'T08:00').toISOString() : null; else if (['work_days', 'warranty_months'].includes(f)) val = val === '' ? null : Number(val); else val = val.trim() || null; await DB.save('jobs', { id: j.id, [f]: val }); toast('נשמר'); }; });
+}
+function openExpenseForm(job, id) {
+  const e = id ? { ...(D.expenses.find((x) => x.id === id) || {}) } : { kind: 'material', title: '', amount: '', worker: '', days: '', receipt: false };
+  const w = sheet('t-expense-form'); const ws = workers();
+  $('#ex-worker', w).innerHTML = '<option value="">—</option>' + ws.map((x) => `<option value="${esc(x.name)}" data-rate="${x.rate || 0}">${esc(x.name)}${x.rate ? ' · ' + money(x.rate) + ' ליום' : ''}</option>`).join('');
+  $('#ex-kind', w).value = e.kind; $('#ex-title', w).value = e.title || ''; $('#ex-amount', w).value = e.amount || ''; $('#ex-worker', w).value = e.worker || ''; $('#ex-days', w).value = e.days || ''; $('#ex-receipt', w).checked = !!e.receipt; if (id) $('#ex-del', w).hidden = false;
+  const sync = () => { const k = $('#ex-kind', w).value; $('#ex-wrow', w).hidden = k !== 'worker' && k !== 'sub'; $('#ex-rrow', w).hidden = k !== 'worker' && k !== 'sub'; };
+  $('#ex-kind', w).onchange = sync; sync();
+  const calc = () => { const o = $('#ex-worker', w).selectedOptions[0]; const rate = Number(o && o.dataset.rate) || 0, days = Number($('#ex-days', w).value) || 0; if (rate && days) $('#ex-amount', w).value = rate * days; };
+  $('#ex-worker', w).onchange = calc; $('#ex-days', w).oninput = calc;
+  $('#ex-save', w).onclick = async () => { const amount = Number($('#ex-amount', w).value); if (!(amount >= 0)) return toast('סכום לא תקין'); const kind = $('#ex-kind', w).value;
+    await DB.save('expenses', { ...(id ? { id } : { job_id: job.id }), kind, title: $('#ex-title', w).value.trim() || null, amount, worker: ['worker', 'sub'].includes(kind) ? ($('#ex-worker', w).value || null) : null, days: Number($('#ex-days', w).value) || null, receipt: $('#ex-receipt', w).checked, spent_at: dayKey(Date.now()) }); closeSheet(); render(); toast('נשמר'); };
+  $('#ex-del', w).onclick = async () => { await DB.trash('expenses', id); closeSheet(); render(); toast('הועבר לסל'); };
+  setTimeout(() => $('#ex-title', w).focus(), 50);
+}
+function openWorkerForm(idx) {
+  const ws = [...workers()]; const x = idx != null ? { ...ws[idx] } : { name: '', phone: '', rate: '', type: 'מורשה' };
+  const w = sheet('t-worker-form'); $('#wk-name', w).value = x.name; $('#wk-phone', w).value = x.phone || ''; $('#wk-rate', w).value = x.rate || ''; $('#wk-type', w).value = x.type || 'מורשה'; if (idx != null) $('#wk-del', w).hidden = false;
+  $('#wk-save', w).onclick = async () => { const name = $('#wk-name', w).value.trim(); if (!name) return toast('שם?'); const n = { name, phone: $('#wk-phone', w).value.trim(), rate: Number($('#wk-rate', w).value) || 0, type: $('#wk-type', w).value }; if (idx != null) ws[idx] = n; else ws.push(n); await DB.save('settings', { workers: ws }); closeSheet(); render(); toast('נשמר'); };
+  $('#wk-del', w).onclick = async () => { ws.splice(idx, 1); await DB.save('settings', { workers: ws }); closeSheet(); render(); };
+  setTimeout(() => $('#wk-name', w).focus(), 50);
+}
+async function tasksFromQuote(job, q) {   // הלקוח אישר → כל סעיף הופך למשימת-ביצוע (פעם אחת לכל סעיף)
+  const have = new Set(tasksOf(job.id).map((t) => t.item_id).filter(Boolean));
+  for (const i of (q.items || []).filter((i) => i.visible !== false && !have.has(i.id))) await DB.save('tasks', { job_id: job.id, item_id: i.id, title: i.title });
 }
 function bindJobNotes(j) {
   const ta = $('#j-notes'); if (!ta) return;
@@ -180,6 +227,7 @@ const UNFORESEEN_DEFAULT = 'במידה ויתגלו במהלך העבודה כש
 const GENERAL_TERMS = ['המחירים כוללים אך ורק את הסעיפים המפורטים בהצעה זו. עבודה שאינה מופיעה כאן אינה כלולה במחיר.', 'לוח הזמנים כפוף לתנאי מזג האוויר ולזמינות חומרים, ויתואם מראש מול הלקוח.', 'ההצעה מחייבת את הצדדים רק לאחר אישור הלקוח, ובתוקף עד המועד הנקוב בראש המסמך.'];
 function renderPrint() {
   const v = $('#v-print'); v.hidden = false;
+  if (S.params.summary) return renderSummaryPrint(v);
   const q = Q.cur(S.params.id); if (!q) return v.innerHTML = '<div class="empty">הצעה לא נמצאה</div>';
   const j = D.jobs.find((x) => x.id === q.job_id) || {}, c = custOf(j.customer_id) || {}, k = Q.calc(q);
   const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl();
@@ -190,17 +238,39 @@ function renderPrint() {
   v.innerHTML = `<div class="print-tools"><button class="btn" data-back>‹ חזרה</button><button class="btn pri" data-act="print">הדפס / שמור PDF</button><span class="dim">בטלפון: "שמור כ-PDF" ואז שיתוף בוואטסאפ</span></div>
   <div class="page">
     <div class="ph"><div><div class="biz">${esc(b.businessName)}</div><div class="owner">${esc(b.ownerName)}</div></div><div class="contact"><div>${esc(b.phone)}</div><div dir="ltr">${esc(b.email)}</div><div>ח.פ. ${esc(b.taxId)}</div></div></div>
-    <div class="ptitle"><div class="pt">הצעת מחיר #${esc(q.number || '')}</div><div class="pd"><div><b>תאריך:</b> ${dateFull(q.sent_at || q.created_at)}</div><div class="valid"><b>בתוקף עד:</b> ${dateFull(Q.validUntil(q))}</div></div></div>
+    <div class="ptitle"><div class="pt">${q.addon ? 'תוספת לעבודה — הצעה משלימה' : 'הצעת מחיר'} #${esc(q.number || '')}</div><div class="pd"><div><b>תאריך:</b> ${dateFull(q.sent_at || q.created_at)}</div><div class="valid"><b>בתוקף עד:</b> ${dateFull(Q.validUntil(q))}</div></div></div>
     <div class="pto"><div class="dim">לכבוד</div><div class="cn">${esc(c.name || '')}</div>${c.address ? `<div class="dim">${esc(c.address)}</div>` : ''}</div>
     <table class="pitems"><thead><tr><th>#</th><th class="desc">תיאור הסעיף</th><th>כמות</th><th>מחיר ליח'</th>${hasUrg ? '<th>דחיפות</th>' : ''}<th>סה"כ</th></tr></thead><tbody>
     ${items.map((i, n) => `<tr><td>${n + 1}</td><td class="desc"><b>${esc(i.title)}</b>${i.description ? `<div class="idesc">${esc(i.description)}</div>` : ''}</td><td>${i.qty} ${esc(i.unit || '')}</td><td>${fmt(i.price_per_unit)}</td>${hasUrg ? `<td>${esc(i.urgency || '')}</td>` : ''}<td class="sum">${fmt(i.total)}</td></tr>`).join('')}</tbody></table>
     <div class="ptot"><div class="box">${k.disc ? `<div class="r"><span>סה"כ סעיפים</span><span>${fmt(k.sum)}</span></div><div class="r"><span>הנחה</span><span>− ${fmt(k.disc)}</span></div>` : ''}<div class="r"><span>סה"כ לפני מע"מ</span><span>${fmt(k.before)}</span></div><div class="r"><span>מע"מ ${q.vat_rate}%</span><span>${fmt(k.vat)}</span></div><div class="r big"><span>סה"כ לתשלום</span><span>${fmt(k.total)}</span></div><div class="r"><span>מקדמה 30%</span><span>${fmt(k.advance)}</span></div></div></div>
     ${q.payment_terms ? `<div class="pbox"><b>תנאי תשלום</b><div>${esc(q.payment_terms)}</div></div>` : ''}
     ${q.notes ? `<div class="pbox"><b>הערות</b><div class="pre">${esc(q.notes)}</div></div>` : ''}
-    <div class="pbox dashed"><b>הבהרה — עבודות בלתי-צפויות</b><div>${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</div></div>
-    <div class="pbox"><b>תנאים כלליים</b>${GENERAL_TERMS.map((x) => `<div>${esc(x)}</div>`).join('')}</div>
+    ${q.addon ? '<div class="pbox dashed">תוספת זו מתווספת להצעה המקורית שאושרה, ובאותם תנאים. הביצוע לאחר אישור הלקוח.</div>' : `<div class="pbox dashed"><b>הבהרה — עבודות בלתי-צפויות</b><div>${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</div></div>
+    <div class="pbox"><b>תנאים כלליים</b>${GENERAL_TERMS.map((x) => `<div>${esc(x)}</div>`).join('')}</div>`}
     <div class="psig"><div><div class="line"></div>חתימת הלקוח · תאריך</div><div><div class="line"></div>חתימת הקבלן · תאריך</div></div>
     <div class="pfoot">הופק מאפליקציית "אור בגג" · ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>
+  </div>`;
+}
+const MAINT_DEFAULT = 'ניקוי מרזבים פעמיים בשנה (לפני החורף ואחריו). בדיקה חזותית של הגג אחרי סערה. לא לדרוך על רעפים ופנלים בלי צורך. בכל רטיבות — לצלם ולהתקשר, לא לחכות.';
+function renderSummaryPrint(v) {   // סיכום עבודה ללקוח: מה בוצע, לפני/אחרי, אחריות, תחזוקה (עמוד להדפסה כמו ההצעה)
+  const j = D.jobs.find((x) => x.id === S.params.summary); if (!j) return v.innerHTML = '<div class="empty">עבודה לא נמצאה</div>';
+  const c = custOf(j.customer_id) || {}, b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl();
+  const q = quotesOf(j.id).find((x) => x.status === 'accepted') || quotesOf(j.id)[0]; const did = tasksOf(j.id).length ? tasksOf(j.id).filter((x) => x.done_at).map((x) => x.title) : ((q && q.items) || []).filter((i) => i.visible !== false).map((i) => i.title);
+  const ms = mediaOf(j.id).filter((m) => m.thumb_data), split = j.started_at ? new Date(j.started_at) : null; const before = split ? ms.filter((m) => new Date(m.taken_at || m.created_at) < split) : ms, after = split ? ms.filter((m) => new Date(m.taken_at || m.created_at) >= split) : [];
+  const wEnd = j.warranty_months && j.finished_at ? new Date(new Date(j.finished_at).setMonth(new Date(j.finished_at).getMonth() + j.warranty_months)) : null;
+  const pics = (arr) => arr.slice(0, 4).map((m) => `<img src="${m.thumb_data}" alt="" style="width:23%;aspect-ratio:1;object-fit:cover;border-radius:6px;margin:1%">`).join('');
+  v.dataset.title = `סיכום עבודה - ${c.name || ''}`;
+  v.innerHTML = `<div class="print-tools"><button class="btn" data-back>‹ חזרה</button><button class="btn pri" data-act="print">הדפס / שמור PDF</button></div>
+  <div class="page">
+    <div class="ph"><div><div class="biz">${esc(b.businessName)}</div><div class="owner">${esc(b.ownerName)}</div></div><div class="contact"><div>${esc(b.phone)}</div><div dir="ltr">${esc(b.email)}</div></div></div>
+    <div class="ptitle"><div class="pt">סיכום עבודה</div><div class="pd"><div><b>תאריך:</b> ${new Date().toLocaleDateString('he-IL')}</div></div></div>
+    <div class="pto"><div class="dim">לכבוד</div><div class="cn">${esc(c.name || '')}</div>${c.address ? `<div class="dim">${esc(c.address)}</div>` : ''}</div>
+    <div class="pbox"><b>${esc(j.title || 'העבודה')}</b><div>${j.started_at ? 'התחלה ' + dateHe(j.started_at) : ''}${j.finished_at ? ' · סיום ' + dateHe(j.finished_at) : ''}${j.work_days ? ' · ' + j.work_days + ' ימי עבודה' : ''}</div></div>
+    <div class="pbox"><b>מה בוצע</b>${did.map((x) => `<div>• ${esc(x)}</div>`).join('') || '<div class="dim">—</div>'}</div>
+    ${before.length ? `<div class="pbox"><b>לפני</b><div>${pics(before)}</div></div>` : ''}${after.length ? `<div class="pbox"><b>אחרי</b><div>${pics(after)}</div></div>` : ''}
+    <div class="pbox"><b>אחריות</b><div>${j.warranty_months ? `${j.warranty_months} חודשים על העבודה שבוצעה${wEnd ? ', עד ' + dateHe(wEnd) : ''}.` : 'לפי המוסכם בהצעת המחיר.'}</div></div>
+    <div class="pbox"><b>המלצות לתחזוקה</b><div class="pre">${esc(t.maintenance || MAINT_DEFAULT)}</div></div>
+    <div class="pfoot">תודה שבחרתם ב${esc(b.businessName)} · ${esc(b.phone)}</div>
   </div>`;
 }
 function openPaymentForm(job) {
@@ -247,7 +317,11 @@ function renderMoney() {
   const v = $('#v-money'); v.hidden = false;
   const owe = live(D.jobs).filter((j) => ['approved', 'doing'].includes(j.stage) && j.price_agreed).map((j) => ({ j, left: j.price_agreed - paymentsOf(j.id).reduce((a, p) => a + Number(p.amount || 0), 0) })).filter((x) => x.left > 0);
   const noInv = live(D.payments).filter((p) => !p.invoice_issued);
+  const noRec = live(D.expenses).filter((e) => ['worker', 'sub'].includes(e.kind) && !e.receipt);
+  const profit = live(D.jobs).filter((j) => ['doing', 'paid'].includes(j.stage) && j.price_agreed && expensesOf(j.id).length).map((j) => ({ j, spent: expensesOf(j.id).reduce((a, e) => a + Number(e.amount || 0), 0) })).slice(0, 10);
   v.innerHTML = `<div class="section">חייבים לך</div><div class="list">${owe.map(({ j, left }) => `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${esc(j.title || '')}</div></div><b>${money(left)}</b></div>`).join('') || '<div class="empty">אין חובות פתוחים</div>'}</div>
+  ${noRec.length ? `<div class="section">לקבל חשבונית/קבלה · ${noRec.length}</div><div class="list">${noRec.map((e) => { const j = D.jobs.find((x) => x.id === e.job_id) || {}; return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(e.worker || e.title || EXP_HE[e.kind])}</div><div class="sub">${esc(custOf(j.customer_id)?.name || '')} · ${money(e.amount)}</div></div><button class="btn sm" data-exp-receipt="${e.id}">התקבלה</button></div>`; }).join('')}</div>` : ''}
+  ${profit.length ? `<div class="section">רווח לעבודה</div><div class="list">${profit.map(({ j, spent }) => `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">סוכם ${money(j.price_agreed)} · הוצאות ${money(spent)}</div></div><b style="color:${j.price_agreed - spent >= 0 ? 'var(--ok)' : 'var(--red)'}">${money(j.price_agreed - spent)}</b></div>`).join('')}</div>` : ''}
   <div class="section">תשלומים בלי חשבונית · ${noInv.length}</div><div class="dim" style="margin-bottom:6px">להוציא בחשבונית ירוקה, ואז לסמן כאן.</div><div class="list">${noInv.map((p) => { const j = D.jobs.find((x) => x.id === p.job_id) || {}; return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(custOf(j.customer_id)?.name)}</div><div class="sub">${dateHe(p.paid_at)} · ${money(p.amount)}</div></div><button class="btn sm" data-inv="${p.id}">הוצאתי חשבונית</button></div>`; }).join('') || '<div class="empty">הכל עם חשבונית</div>'}</div>`;
 }
 function renderMore() {
@@ -269,7 +343,8 @@ function renderSettings() {
   <div class="section">תבנית הצעת מחיר</div><div class="card sheet" style="max-height:none">
   <div class="row2"><label style="flex:1">מע"מ %<input id="s-vat" type="number" dir="ltr" value="${t.vatRate ?? 18}"></label><label style="flex:1">תוקף (ימים)<input id="s-valid" type="number" dir="ltr" value="${t.validityDays || 30}"></label></div>
   <label>תנאי תשלום<input id="s-terms" value="${esc(t.paymentTerms || '30% מקדמה במועד החתימה, 70% בסיום העבודה')}"></label><label>הערות קבועות להצעה<textarea id="s-notes" rows="3">${esc(t.standardNotes || '')}</textarea></label><label>נוסח "עבודות בלתי-צפויות"<textarea id="s-unf" rows="3">${esc(t.unforeseenClause || UNFORESEEN_DEFAULT)}</textarea></label>
-  <button class="btn pri" data-act="save-settings">שמור</button></div>`;
+  <button class="btn pri" data-act="save-settings">שמור</button></div>
+  <div class="section">עובדים וקבלני משנה</div><div class="card">${workers().map((x, i) => `<div class="qitem" data-worker-edit="${i}" style="cursor:pointer"><div><div class="t">${esc(x.name)}</div><div class="dim">${esc(x.phone || '')}${x.rate ? ' · ' + money(x.rate) + ' ליום' : ''} · ${esc(x.type || '')}</div></div></div>`).join('') || '<div class="dim">מי עובד איתך: שם, תעריף יומי, מורשה/פטור. בעבודה מסמנים מי עבד וכמה ימים.</div>'}<div class="actions"><button class="btn sm" data-act="worker-add">הוסף</button></div></div>`;
 }
 function renderCatalog() {
   const v = $('#v-catalog'); v.hidden = false; const cat = ((D.settings && D.settings.catalog) || []); const f = (S.params.q || '').trim();
@@ -326,6 +401,7 @@ function openJobForm(customerId) {
 }
 const NEXT = { lead: ['visit', 'quote'], visit: ['quote'], quote: ['sent'], sent: ['approved', 'lost'], approved: ['doing'], doing: ['paid'], paid: [], lost: ['lead'] };
 const NEXT_HE = { visit: 'נקבע ביקור', quote: 'בונים הצעה', sent: 'נשלחה ללקוח', approved: 'הלקוח אישר', doing: 'התחלנו', paid: 'שולם וסגור', lost: 'לא יצא', lead: 'לפתוח מחדש' };
+const WA_MAINT = 'שלום, זה אור מאור בגג. עברה שנה מהעבודה אצלכם. לפני החורף כדאי בדיקת תחזוקה קצרה לגג (מרזבים, איטום, רוכבים). אשמח לתאם.';
 const WA_FOLLOWUP = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
 const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
 function renderTrash() {
@@ -338,7 +414,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],[data-exp],[data-exp-receipt],[data-worker-edit],#plus,#refresh,#logout');
   if (!t || t.id === 'photo-in') return;
   try { DB.used(t.dataset.act || (t.dataset.tab && 'tab:' + t.dataset.tab) || (t.dataset.stage && 'stage:' + t.dataset.stage) || (t.dataset.new && 'new:' + t.dataset.new) || t.id || 'row'); } catch (e) {}
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
@@ -360,7 +436,7 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'new-job' && cur) openJobForm(cur.id);
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
   else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה');
-    if (s === 'approved') { const q = quotesOf(job.id).find((x) => x.status === 'sent') || quotesOf(job.id)[0]; if (q) { await Q.save(q, { status: 'accepted' }, { noVersion: true }); await DB.save('jobs', { id: job.id, price_agreed: q.total }); } }
+    if (s === 'approved') { const q = quotesOf(job.id).find((x) => x.status === 'sent') || quotesOf(job.id)[0]; if (q) { await Q.save(q, { status: 'accepted' }, { noVersion: true }); await DB.save('jobs', { id: job.id, price_agreed: q.total }); await tasksFromQuote(job, q); } }
     await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
   else if (t.dataset.act === 'add-payment' && job) openPaymentForm(job);
   else if (t.dataset.inv) { await DB.save('payments', { id: t.dataset.inv, invoice_issued: true }); render(); toast('סומן: חשבונית הוצאה'); }
@@ -371,6 +447,13 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.finding && job) openFindingForm(job, t.dataset.finding);
   else if (t.dataset.act === 'clear-findings' && job) confirmAsk('לנקות את הממצאים?', 'הממצאים יימחקו מהעבודה (התמונות נשארות).', async () => { for (const f of findingsOf(job.id)) await DB.trash('findings', f.id); render(); });
   else if (t.dataset.act === 'voice' && job) startVoice(job);
+  else if (t.dataset.act === 'add-expense' && job) openExpenseForm(job);
+  else if (t.dataset.exp && job) openExpenseForm(job, t.dataset.exp);
+  else if (t.dataset.expReceipt) { await DB.save('expenses', { id: t.dataset.expReceipt, receipt: true }); render(); toast('סומן: חשבונית התקבלה'); }
+  else if (t.dataset.act === 'addon' && job) { if (t.disabled) return; t.disabled = true; try { const q = await Q.create(job, { addon: true }); show('quote', { id: q.id }); } finally { t.disabled = false; } }
+  else if (t.dataset.act === 'summary' && job) show('print', { summary: job.id });
+  else if (t.dataset.act === 'worker-add') openWorkerForm();
+  else if (t.dataset.workerEdit) openWorkerForm(+t.dataset.workerEdit);
   else if (t.dataset.media) openMedia(t.dataset.media);
   else if (t.dataset.quote) show('quote', { id: t.dataset.quote });
   else if (t.dataset.act === 'new-quote' && job) { if (t.disabled) return; t.disabled = true; try { const q = await Q.create(job); show('quote', { id: q.id }); } finally { t.disabled = false; } }   // לחיצה כפולה לא יוצרת שתי הצעות
