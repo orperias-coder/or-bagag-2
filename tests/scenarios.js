@@ -159,6 +159,31 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   ok('more: alert dismissed', (await p.locator('#alerts .alert').count()) === 0);
   await settle(p);
 
+  // ---- ממצאי ביקורת-השבירה ----
+  // (1) שני מכשירים עורכים שדות שונים של אותו לקוח — שניהם שורדים
+  const cc = await p.evaluate(async () => (await DB.save('customers', { name: 'e2e מקבילי', phone: '0500000001', address: 'כתובת מקורית' })).id); await settle(p);
+  const ctxB = await b.newContext({ viewport: { width: 1280, height: 800 }, locale: 'he-IL' }); const pB = await login(ctxB);
+  await p.evaluate(async (id) => { await DB.save('customers', { id, address: 'כתובת חדשה מ-A' }); }, cc); await settle(p);
+  await pB.evaluate(async (id) => { await DB.save('customers', { id, phone: '0500000002' }); }, cc); await settle(pB); await ctxB.close();
+  const merged = await p.evaluate(async (id) => (await sb.from('customers').select('phone,address').eq('id', id).single()).data, cc);
+  ok('adv: concurrent field edits both survive', merged && merged.phone === '0500000002' && merged.address === 'כתובת חדשה מ-A', JSON.stringify(merged));
+  // (2-4) כמות שלילית/אפס נחסמת; הנחה מוגבלת
+  await p.click('#tabs [data-tab="customers"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  const nBefore = await p.evaluate(() => Q.cur(S.params.id).items.length);
+  await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'שלילי'); await p.fill('#i-qty', '-5'); await p.fill('#i-ppu', '100'); await p.click('#i-save'); await p.waitForTimeout(200);
+  ok('adv: negative qty blocked', (await p.evaluate(() => Q.cur(S.params.id).items.length)) === nBefore && (await p.locator('#sheet-wrap').count()) === 1);
+  await p.fill('#i-qty', '0'); await p.click('#i-save'); await p.waitForTimeout(200);
+  ok('adv: zero qty blocked', (await p.evaluate(() => Q.cur(S.params.id).items.length)) === nBefore);
+  await p.click('#sheet-wrap [data-close]');
+  await p.click('[data-act="discount"]'); await p.selectOption('#d-type', 'percent'); await p.fill('#d-value', '150'); await p.click('#d-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  const kq = await p.evaluate(() => { const q = Q.cur(S.params.id); return { d: q.discount.value, ...Q.calc(q) }; });
+  ok('adv: discount capped at 100% and not above sum', kq.d === 100 && kq.disc === kq.sum && kq.before === 0, JSON.stringify(kq));
+  await p.click('[data-act="discount"]'); await p.fill('#d-value', '0'); await p.click('#d-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
+  // (5) כפתור-אחורה של הדפדפן חוזר מסך אחד
+  await p.goBack(); await p.waitForTimeout(200); ok('adv: browser back → job screen', (await p.locator('#v-job:not([hidden])').count()) === 1, 'view=' + await p.evaluate(() => S.view));
+  await p.goBack(); await p.waitForTimeout(200); ok('adv: browser back → customer screen', (await p.evaluate(() => S.view)) === 'customer');
+  await settle(p);
+
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('CRASH', e); process.exit(2); });

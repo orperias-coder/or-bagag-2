@@ -5,7 +5,7 @@ const Q = {
     const items = (q.items || []).filter((i) => i.visible !== false);
     const sum = items.reduce((a, i) => a + Number(i.total || 0), 0);
     const d = q.discount || null;
-    const disc = !d ? 0 : d.type === 'percent' ? sum * Number(d.value || 0) / 100 : Number(d.value || 0);
+    const disc = Math.min(sum, !d ? 0 : d.type === 'percent' ? sum * Math.min(100, Number(d.value || 0)) / 100 : Number(d.value || 0));   // הנחה לא עולה על סכום הסעיפים
     const before = Math.max(0, sum - disc); const vat = before * Number(q.vat_rate ?? 18) / 100;
     return { sum, disc, before, vat, total: before + vat, advance: (before + vat) * 0.3 };
   },
@@ -75,8 +75,12 @@ function openItemForm(q, idx) {
   const recalc = () => { const t = (Number($('#i-qty', w).value) || 0) * (Number($('#i-ppu', w).value) || 0); $('#i-total', w).textContent = money(Math.round(t)); };
   $('#i-qty', w).oninput = recalc; $('#i-ppu', w).oninput = recalc; recalc();
   $('#i-save', w).onclick = async () => {
-    const n = { ...it, title: $('#i-title', w).value.trim(), description: $('#i-desc', w).value.trim(), qty: Number($('#i-qty', w).value) || 1, unit: $('#i-unit', w).value.trim(), price_per_unit: Number($('#i-ppu', w).value) || 0, urgency: $('#i-urg', w).value };
-    n.total = Math.round(n.qty * n.price_per_unit); if (!n.title) return toast('צריך שם לסעיף');
+    const qty = Number($('#i-qty', w).value), ppu = Number($('#i-ppu', w).value);
+    if (!$('#i-title', w).value.trim()) return toast('צריך שם לסעיף');
+    if (!(qty > 0)) return toast('הכמות צריכה להיות גדולה מ-0');
+    if (!(ppu >= 0) || ppu > 1e9) return toast('מחיר לא תקין');
+    const n = { ...it, title: $('#i-title', w).value.trim(), description: $('#i-desc', w).value.trim(), qty, unit: $('#i-unit', w).value.trim(), price_per_unit: ppu, urgency: $('#i-urg', w).value };
+    n.total = Math.round(n.qty * n.price_per_unit);
     const items = [...(q.items || [])]; if (idx != null) items[idx] = n; else items.push(n);
     await Q.save(q, { items }, { noVersion: q.status === 'draft' }); closeSheet(); render();
   };
@@ -92,7 +96,7 @@ function openCatalog(q) {
 }
 function openDiscount(q) {
   const w = sheet('t-discount'); if (q.discount) { $('#d-type', w).value = q.discount.type; $('#d-value', w).value = q.discount.value; }
-  $('#d-save', w).onclick = async () => { const val = Number($('#d-value', w).value) || 0; await Q.save(q, { discount: val > 0 ? { type: $('#d-type', w).value, value: val } : null }, { noVersion: q.status === 'draft' }); closeSheet(); render(); };
+  $('#d-save', w).onclick = async () => { let val = Number($('#d-value', w).value) || 0; if (val < 0) return toast('הנחה לא יכולה להיות שלילית'); if ($('#d-type', w).value === 'percent' && val > 100) { val = 100; toast('הנחה מוגבלת ל-100%'); } await Q.save(q, { discount: val > 0 ? { type: $('#d-type', w).value, value: val } : null }, { noVersion: q.status === 'draft' }); closeSheet(); render(); };
 }
 function renderVersions(q) {
   const box = $('#v-versions'); const vs = D.quote_versions.filter((x) => x.quote_id === q.id).sort((a, b) => b.version - a.version);

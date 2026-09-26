@@ -31,6 +31,10 @@ const DB = (() => {
     if (item.op === 'upsert') {
       const { error } = await sb.from(item.table).upsert(item.row, { onConflict: item.table === 'settings' ? 'user_id' : 'id' });
       if (error) throw error;
+    } else if (item.op === 'update') {
+      const { id, ...patch } = item.row; const { error, data } = await sb.from(item.table).update(patch).eq('id', id).select('id');
+      if (error) throw error;
+      if (!data || !data.length) { const e = new Error('row-missing-in-cloud'); e.code = 'PGRST_NOROW'; throw e; }   // השורה לא בענן (יצירה נכשלה?) — ל"כתיבות שנדחו"
     } else if (item.op === 'event') {
       const { error } = await sb.from('events').insert(item.row); if (error) throw error;
     } else if (item.op === 'upload') {
@@ -76,8 +80,12 @@ const DB = (() => {
     for (const k of Object.keys(row)) if (k.startsWith('_')) delete row[k];
     delete row.user_id;                                       // הענן ממלא auth.uid()
     local(table, row);
-    const cloudRow = { ...row }; if (table === 'settings') cloudRow.user_id = D.uid;
-    await enqueue({ op: 'upsert', table, row: cloudRow });
+    // לענן נשלחים רק השדות ששונו (patch) — כך שני מכשירים שעורכים שדות שונים באותו זמן לא דורסים זה את זה.
+    // שורה חדשה נשלחת במלואה.
+    const cloudRow = isNew || table === 'settings' ? { ...row } : { ...patch }; for (const k of Object.keys(cloudRow)) if (k.startsWith('_')) delete cloudRow[k];
+    delete cloudRow.user_id; if (!isNew && !['settings', 'quote_versions', 'alerts'].includes(table)) cloudRow.updated_at = now;
+    if (table === 'settings') cloudRow.user_id = D.uid;
+    await enqueue({ op: isNew || table === 'settings' ? 'upsert' : 'update', table, row: cloudRow });
     await enqueue({ op: 'event', row: { entity: table, entity_id: table === 'settings' ? D.uid : row.id, action: isNew ? 'create' : 'update', device: DEVICE, diff: patch } });
     return row;
   }
@@ -97,7 +105,7 @@ const DB = (() => {
     const res = await Promise.all(Object.entries(sel).map(([t, s]) => sb.from(t).select(s).order(t === 'alerts' ? 'at' : t === 'quote_versions' ? 'created_at' : 'updated_at', { ascending: false }).limit(t === 'media' ? 800 : 3000).then((r) => [t, r])));
     for (const [t, r] of res) { if (r.error) { if (t === 'alerts') { D.alerts = []; continue; } throw r.error; } D[t] = r.data; }
     const st = await sb.from('settings').select('*').maybeSingle(); if (!st.error && st.data) D.settings = st.data;
-    for (const it of await qAll()) if (it.op === 'upsert') local(it.table, it.row);   // מה שעוד לא עלה גובר
+    for (const it of await qAll()) if (it.op === 'upsert' || it.op === 'update') local(it.table, it.row);   // מה שעוד לא עלה גובר
     D.loadedAt = Date.now(); cacheSave();
   }
   async function uploadPhoto(file, jobId, customerId) {

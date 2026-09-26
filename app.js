@@ -28,13 +28,21 @@ const custOf = (id) => D.customers.find((c) => c.id === id);
 
 // ---------- ניווט ----------
 const S = { view: 'customers', stack: [], tab: 'customers', q: '' };
-function show(view, params) {
+function show(view, params, fromPop) {
   if (view !== S.view || JSON.stringify(params) !== JSON.stringify(S.params)) S.stack.push({ view: S.view, params: S.params });
   S.view = view; S.params = params || {};
+  if (!fromPop) { try { history.pushState({ ob2: S.stack.length }, ''); } catch (e) {} }   // כפתור-אחורה של הטלפון חוזר מסך אחד, לא יוצא מהאפליקציה
   render();
   window.scrollTo(0, 0);
 }
-function back() { const p = S.stack.pop(); if (!p) return show('customers'); S.view = p.view; S.params = p.params || {}; render(); }
+function back(fromPop) {
+  if ($('#sheet-wrap')) { closeSheet(); return; }
+  if (!fromPop && history.state && history.state.ob2 > 0) { history.back(); return; }   // popstate מבצע את החזרה (פעם אחת)
+  const p = S.stack.pop(); if (!p) { S.view = 'customers'; S.params = {}; render(); return; }
+  S.view = p.view; S.params = p.params || {}; render();
+}
+window.addEventListener('popstate', () => { if (S.stack.length || $('#sheet-wrap')) back(true); });
+try { history.replaceState({ ob2: 0 }, ''); } catch (e) {}
 function render() {
   document.querySelectorAll('.view').forEach((v) => v.hidden = true);
   const map = { customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
@@ -260,7 +268,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.cust) show('customer', { id: t.dataset.cust });
   else if (t.dataset.job) show('job', { id: t.dataset.job });
   else if (t.hasAttribute('data-back')) back();
-  else if (t.dataset.tab) { S.stack = []; S.q = ''; $('#search').value = ''; show(t.dataset.tab); }
+  else if (t.dataset.tab) { S.stack = []; S.q = ''; $('#search').value = ''; S.view = t.dataset.tab; S.params = {}; try { history.replaceState({ ob2: 0 }, ''); } catch (e) {} render(); window.scrollTo(0, 0); }
   else if (t.id === 'plus') sheet('t-plus');
   else if (t.dataset.new === 'customer') openCustomerForm();
   else if (t.dataset.new === 'job') pickCustomer((cid) => openJobForm(cid));
