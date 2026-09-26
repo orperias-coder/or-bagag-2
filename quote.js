@@ -113,7 +113,7 @@ async function quoteAction(act, t) {
   else if (act === 'discount') openDiscount(q);
   else if (act === 'mark-sent') { if (!(q.items || []).length) return toast('אין סעיפים בהצעה'); await Q.markSent(q); render(); toast('סומן: נשלחה. סופרים ימים.'); }
   else if (act === 'versions') renderVersions(q);
-  else if (act === 'accept-addon') { if (!(q.items || []).length) return toast('אין סעיפים בתוספת'); const k = Q.calc(q); await Q.save(q, { status: 'accepted' }, { noVersion: true }); const j = D.jobs.find((x) => x.id === q.job_id); if (j) { await DB.save('jobs', { id: j.id, price_agreed: Number(j.price_agreed || 0) + k.total }); await tasksFromQuote(j, q); } render(); toast('התוספת נוספה לסכום העבודה'); }
+  else if (act === 'accept-addon') { if (q.status === 'accepted' || t.disabled) return; t.disabled = true; if (!(q.items || []).length) { t.disabled = false; return toast('אין סעיפים בתוספת'); } const k = Q.calc(q); await Q.save(q, { status: 'accepted' }, { noVersion: true }); const j = D.jobs.find((x) => x.id === q.job_id); if (j) { await DB.save('jobs', { id: j.id, price_agreed: Number(j.price_agreed || 0) + k.total }); await tasksFromQuote(j, q); } render(); toast('התוספת נוספה לסכום העבודה'); }
   else if (act === 'share') { const text = Q.shareText(q); if (navigator.share) { try { await navigator.share({ text }); } catch (e) {} } else { await navigator.clipboard.writeText(text); toast('הטקסט הועתק'); } }
   else if (act === 'pdf') show('print', { id: q.id });
   else if (act === 'trash-quote') confirmAsk('להעביר את ההצעה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('quotes', q.id); back(); });

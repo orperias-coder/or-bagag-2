@@ -30,6 +30,7 @@ const DB = (() => {
   async function send(item) {
     if (item.op === 'upsert') {
       const { error } = await sb.from(item.table).upsert(item.row, { onConflict: item.table === 'settings' ? 'user_id' : 'id' });
+      if (error && error.code === '23505' && item.table === 'tasks') { const arr = D.tasks || []; const i = arr.findIndex((x) => x.id === item.row.id); if (i >= 0) arr.splice(i, 1); return; }   // אותו סעיף כבר הפך למשימה ממכשיר אחר — הכפול נזרק
       if (error) throw error;
     } else if (item.op === 'update') {
       const { id, ...patch } = item.row; const { error, data } = await sb.from(item.table).update(patch).eq('id', id).select('id');

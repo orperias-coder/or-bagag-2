@@ -143,7 +143,7 @@ function renderCustomer() {
   const c = custOf(S.params.id); if (!c) return v.innerHTML = '<div class="empty">לקוח לא נמצא</div>';
   const js = jobsOf(c.id);
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button>
-  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="https://wa.me/972${esc(String(c.phone).replace(/\D/g, '').replace(/^0/, ''))}" target="_blank">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}${dupOf(c) ? `<div class="alert" style="margin-top:8px"><span>יש לקוח נוסף עם אותו טלפון: <b>${esc(dupOf(c).name)}</b></span><button class="btn sm" data-merge="${dupOf(c).id}">מזג לכאן</button></div>` : ''}<div class="actions"><button class="btn sm ghost" data-act="report">דוח ייעוץ</button><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
+  <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="#" data-act="wa">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}${dupOf(c) ? `<div class="alert" style="margin-top:8px"><span>יש לקוח נוסף עם אותו טלפון: <b>${esc(dupOf(c).name)}</b></span><button class="btn sm" data-merge="${dupOf(c).id}">מזג לכאן</button></div>` : ''}<div class="actions"><button class="btn sm ghost" data-act="report">דוח ייעוץ</button><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
   <div class="section">עבודות · ${js.length}</div>
   <div class="list">${js.map((j) => { const qs = quotesOf(j.id); const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
     return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(j.title || (qs[0] && qs[0].items && qs[0].items[0] && qs[0].items[0].title) || 'עבודה')}</div><div class="sub">${dateHe(j.created_at)}${qs.length ? ' · ' + qs.length + ' הצעות' : ''}${j.price_agreed ? ' · ' + money(j.price_agreed) : ''}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}<span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`; }).join('') || '<div class="empty">אין עבודות</div>'}</div>`;
@@ -187,7 +187,9 @@ function execHtml(j) {   // מקטע "ביצוע": משימות מהסעיפים
   ${j.price_agreed ? `<div class="total"><span>רווח משוער</span><span style="color:${j.price_agreed - spent >= 0 ? 'var(--ok)' : 'var(--red)'}">${money(j.price_agreed - spent)}</span></div>` : ''}<div class="actions"><button class="btn sm" data-act="add-expense">הוצאה</button></div></div>`;
 }
 function bindJobFields(j) {   // שדות-ביצוע: שמירה אוטומטית בשינוי
-  document.querySelectorAll('#v-job [data-field]').forEach((el) => { el.onchange = async () => { const f = el.dataset.field; let val = el.value; if (['started_at', 'finished_at'].includes(f)) val = val ? new Date(val + 'T08:00').toISOString() : null; else if (['work_days', 'warranty_months'].includes(f)) val = val === '' ? null : Number(val); else val = val.trim() || null; await DB.save('jobs', { id: j.id, [f]: val }); toast('נשמר'); }; });
+  document.querySelectorAll('#v-job [data-field]').forEach((el) => { el.onchange = async () => { const f = el.dataset.field; let val = el.value; if (['started_at', 'finished_at'].includes(f)) val = val ? new Date(val + 'T08:00').toISOString() : null; else if (['work_days', 'warranty_months'].includes(f)) { val = val === '' ? null : Number(val); if (val != null && !(val >= 0)) { el.value = ''; return toast('מספר לא יכול להיות שלילי'); } } else val = val.trim() || null;
+    const cur = live(D.jobs).find((x) => x.id === j.id) || j; const s = f === 'started_at' ? val : cur.started_at, en = f === 'finished_at' ? val : cur.finished_at; if (s && en && new Date(en) < new Date(s)) { el.value = ''; return toast('הסיום לפני ההתחלה'); }
+    await DB.save('jobs', { id: j.id, [f]: val }); toast('נשמר'); }; });
 }
 function openExpenseForm(job, id) {
   const e = id ? { ...(D.expenses.find((x) => x.id === id) || {}) } : { kind: 'material', title: '', amount: '', worker: '', days: '', receipt: false };
@@ -414,8 +416,35 @@ function openJobForm(customerId) {
 const NEXT = { lead: ['visit', 'quote'], visit: ['quote'], quote: ['sent'], sent: ['approved', 'lost'], approved: ['doing'], doing: ['paid'], paid: [], lost: ['lead'] };
 const NEXT_HE = { visit: 'נקבע ביקור', quote: 'בונים הצעה', sent: 'נשלחה ללקוח', approved: 'הלקוח אישר', doing: 'התחלנו', paid: 'שולם וסגור', lost: 'לא יצא', lead: 'לפתוח מחדש' };
 const PIN_KEY = 'ob2_pin';
+function parseLead(text) {   // ליד מהודעה משותפת: מחלץ טלפון, שם וכתובת מהטקסט — אור מתקן לפני שמירה
+  const t = String(text || '').replace(/\r/g, '').trim(); const lines = t.split('\n').map((s) => s.trim()).filter(Boolean);
+  const ph = t.match(/(?:\+?972[-\s]?|0)5\d[-\s]?\d{3}[-\s]?\d{4}/); const phone = ph ? normPhone(ph[0].replace(/^\+?972/, '0')) : '';
+  const named = t.match(/(?:שם|שמי|מדבר|מדברת)[:\s]+([^\n,.:]{2,30})/); const wa = lines.find((l) => /^\[?\d{1,2}[./]\d{1,2}/.test(l) && l.includes(':')) || '';
+  const waName = wa.match(/\]\s*([^:]{2,30}):/) || wa.match(/-\s*([^:]{2,30}):/);
+  const name = (named && named[1].trim()) || (waName && waName[1].trim()) || '';
+  const adr = t.match(/(?:כתובת|רחוב|רח'|שד'|שדרות|סמטת)[:\s]*([^\n]{3,60})/); const address = adr ? adr[1].trim() : (lines.find((l) => /\d+/.test(l) && /[א-ת]{3,}/.test(l) && !/05\d/.test(l) && l.length < 60 && !l.includes(':')) || '');
+  return { name, phone, address, text: t };
+}
+function openLeadForm(text) {
+  const g = parseLead(text); const w = sheet('t-lead-form'); $('#ld-name', w).value = g.name; $('#ld-phone', w).value = g.phone; $('#ld-address', w).value = g.address; $('#ld-text', w).value = g.text;
+  $('#ld-text', w).oninput = () => { if (!$('#ld-phone', w).value && !$('#ld-name', w).value) { const g2 = parseLead($('#ld-text', w).value); $('#ld-name', w).value = g2.name; $('#ld-phone', w).value = g2.phone; $('#ld-address', w).value = $('#ld-address', w).value || g2.address; } };
+  $('#ld-save', w).onclick = async () => {
+    const name = $('#ld-name', w).value.trim(), phone = $('#ld-phone', w).value.trim(), address = $('#ld-address', w).value.trim(), desc = $('#ld-text', w).value.trim();
+    if (!name && !phone) return toast('צריך לפחות שם או טלפון');
+    let c = phone ? live(D.customers).find((x) => normPhone(x.phone) === normPhone(phone)) : null;   // אותו טלפון = אותו לקוח, בלי כפילות
+    if (!c) c = await DB.save('customers', { name: name || phone, phone: phone || null, address: address || null, source: 'וואטסאפ' }); else if (address && !c.address) await DB.save('customers', { id: c.id, address });
+    const j = await DB.save('jobs', { customer_id: c.id, title: null, problem: desc.slice(0, 2000) || null, stage: 'lead', stage_changed_at: new Date().toISOString() });
+    closeSheet(); show('job', { id: j.id }); toast(c.created_at === j.created_at ? 'נפתחה פנייה' : 'נפתחה פנייה ללקוח קיים');
+  };
+  setTimeout(() => $('#ld-name', w).focus(), 50); return w;
+}
+function openWaSheet(c) {
+  const w = sheet('t-wa'); $('#wa-list', w).innerHTML = WA_TPL.map(([he, txt]) => `<a class="btn" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone, txt)}" data-close>${he}</a>`).join('') + `<a class="btn ghost" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone)}" data-close>הודעה חופשית</a>`;
+}
 const WA_MAINT = 'שלום, זה אור מאור בגג. עברה שנה מהעבודה אצלכם. לפני החורף כדאי בדיקת תחזוקה קצרה לגג (מרזבים, איטום, רוכבים). אשמח לתאם.';
-const WA_FOLLOWUP = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
+const WA_FOLLOWUP_TEXT = 'היי, רק לוודא שקיבלת את הצעת המחיר. אשמח לשמוע אם יש שאלות. אור - אור בגג';
+const WA_FOLLOWUP = WA_FOLLOWUP_TEXT;
+const WA_TPL = [['שלחו לי פרטים', 'שלום, הגעתם לאור בגג. כדי שאוכל לעזור, אנא שלחו: שם מלא, כתובת מדויקת, תמונה של הבעיה ותיאור קצר. תודה, אור'], ['בדרך אליך', 'שלום, זה אור מאור בגג. אני בדרך אליכם, מגיע בעוד כ-20 דקות.'], ['ההצעה מצורפת', 'שלום, מצורפת הצעת המחיר כפי שסיכמנו. אשמח לענות על כל שאלה. אור - אור בגג'], ['נשלחה תזכורת', WA_FOLLOWUP_TEXT]];
 const waLink = (phone, text) => phone ? `https://wa.me/972${String(phone).replace(/\D/g, '').replace(/^0/, '')}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
 function renderTrash() {
   const v = $('#v-trash'); v.hidden = false;
@@ -447,6 +476,8 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.new === 'customer') openCustomerForm();
   else if (t.dataset.new === 'job') pickCustomer((cid) => openJobForm(cid));
   else if (t.dataset.act === 'edit-customer' && cur) openCustomerForm(cur);
+  else if (t.dataset.act === 'wa' && cur) { e.preventDefault(); openWaSheet(cur); }
+  else if (t.dataset.new === 'lead') openLeadForm('');
   else if (t.dataset.merge && cur) { const o = custOf(t.dataset.merge); if (!o) return; confirmAsk('למזג את "' + (o.name || '') + '" לתוך "' + (cur.name || '') + '"?', 'העבודות, ההצעות והתמונות שלו יעברו לכאן. הכרטיס הכפול עובר לסל (אפשר לשחזר).', async () => {
     for (const j of D.jobs.filter((j) => j.customer_id === o.id)) await DB.save('jobs', { id: j.id, customer_id: cur.id }); for (const m of D.media.filter((m) => m.customer_id === o.id)) await DB.save('media', { id: m.id, customer_id: cur.id });
     const patch = {}; for (const k of ['address', 'notes', 'roof']) if (!cur[k] && o[k]) patch[k] = o[k]; if (Object.keys(patch).length) await DB.save('customers', { id: cur.id, ...patch }); await DB.trash('customers', o.id); render(); toast('מוזג'); }); }
@@ -517,6 +548,9 @@ async function boot() {
   if (!session) { $('#login').hidden = false; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = true); return; }
   $('#login').hidden = true; ['#top', '#views', '#tabs'].forEach((s) => $(s).hidden = false); DB.onChange(setNet); setNet(); pinLock();
   cacheLoad(); render();
+  const sp = new URLSearchParams(location.search); const shared = [sp.get('title'), sp.get('text'), sp.get('url')].filter(Boolean).join('\n');   // "שתף" מוואטסאפ → פנייה חדשה (Web Share Target)
+  if (sp.has('text') || sp.has('title')) { try { history.replaceState({ ob2: 0 }, '', location.pathname); } catch (e) {} }
   try { await DB.loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
+  if (shared) openLeadForm(shared);
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

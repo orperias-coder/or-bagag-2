@@ -279,7 +279,20 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.evaluate(() => localStorage.setItem('ob2_pin', '1234')); await p.reload(); await p.waitForSelector('#pinlock:not([hidden])', { timeout: 15000 });
   await p.fill('#pin-in', '9999'); ok('E3: wrong PIN rejected', (await p.locator('#pin-msg').textContent()).includes('שגוי'));
   await p.fill('#pin-in', '1234'); await p.waitForSelector('#pinlock', { state: 'hidden', timeout: 3000 }); ok('E3: correct PIN unlocks', true); await p.evaluate(() => localStorage.removeItem('ob2_pin'));
-  await settle(p);
+  // ---- גל 2 ד': ליד מהודעה משותפת, תבניות וואטסאפ ----
+  const LEADPH = '05233' + TAG.slice(-5); const shared = `[26/09, 09:12] יוסי כהן: שלום, יש לי נזילה בגג\nרחוב הרצל 12 חיפה\nטלפון ${LEADPH}`;
+  await p.goto(URL + '?text=' + encodeURIComponent(shared)); await p.waitForSelector('#ld-name', { timeout: 20000 });
+  ok('D1: share-target parsed phone', (await p.inputValue('#ld-phone')) === LEADPH, await p.inputValue('#ld-phone'));
+  ok('D1: share-target parsed name + address', (await p.inputValue('#ld-name')) === 'יוסי כהן' && (await p.inputValue('#ld-address')).includes('הרצל 12'), (await p.inputValue('#ld-name')) + ' | ' + (await p.inputValue('#ld-address')));
+  ok('D1: URL cleaned', !(await p.evaluate(() => location.search)));
+  await p.click('#ld-save'); await p.waitForSelector('#v-job:not([hidden]) .card'); const ldj = await p.locator('#v-job').textContent();
+  ok('D1: lead job created with description', ldj.includes('פנייה') && ldj.includes('נזילה בגג') && ldj.includes('יוסי כהן'));
+  await p.goto(URL + '?text=' + encodeURIComponent('שוב אני, ' + LEADPH)); await p.waitForSelector('#ld-name', { timeout: 20000 }); await p.click('#ld-save'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  ok('D1: same phone → same customer, no duplicate', (await p.evaluate((ph) => live(D.customers).filter((c) => (c.phone || '') === ph).length, LEADPH)) === 1);
+  await p.evaluate(() => show('customer', { id: live(D.jobs).find((j) => j.id === S.params.id).customer_id })); await p.waitForSelector('#v-customer:not([hidden]) h2'); await p.click('#v-customer [data-act="wa"]'); await p.waitForSelector('#wa-list a');
+  const waN = await p.locator('#wa-list a').count(); const waH = await p.locator('#wa-list a').first().getAttribute('href');
+  ok('D2: WhatsApp templates sheet', waN === 5 && waH.startsWith('https://wa.me/972' + LEADPH.slice(1)) && waH.includes(encodeURIComponent('אור בגג')), waH);
+  await p.click('#sheet-wrap [data-close]'); await settle(p);
 
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
