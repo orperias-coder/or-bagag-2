@@ -130,3 +130,5 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 @media (min-width:900px){#alerts{max-width:1100px}}
 .alert.warn{background:var(--acc-l);color:#8a4d05;border-color:#f3cf9a}
 .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.more-jobs>summary{cursor:pointer;list-style:none}.more-jobs>summary::-webkit-details-marker{display:none}
+.more-jobs>summary::after{content:' ›';display:inline-block;transition:transform .15s}.more-jobs[open]>summary::after{transform:rotate(90deg)}

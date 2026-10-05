@@ -26,9 +26,11 @@ const ok = (name, cond, extra) => { console.log((cond ? 'PASS ' : 'FAIL ') + nam
     await p.click('#cust-list .row'); await p.waitForSelector('#v-customer:not([hidden]) .card');
     const jobs = await p.locator('#v-customer .row[data-job]').count();
     ok(`${label}: customer card with jobs`, jobs === 2, jobs + ' jobs');
+    const vis = await p.locator('#v-customer .row[data-job]:visible').count(), hid = await p.locator('#v-customer details.more-jobs .row[data-job]').count();
+    ok(`${label}: only approved/doing jobs open, rest collapsed`, vis === 1 && hid === 1, vis + ' open, ' + hid + ' collapsed');
     ok(`${label}: days-since-sent chip`, await p.locator('#v-customer .chip.days').count() === 1, await p.locator('#v-customer .chip.days').first().textContent().catch(() => ''));
     await p.screenshot({ path: `${OUT}/${label}-2-customer.png` });
-    await p.click('#v-customer .row[data-job]:has(.chip.days)'); await p.waitForSelector('#v-job:not([hidden]) .card');   // העבודה עם ההצעה שנשלחה (הסדר לפי עדכון אחרון משתנה)
+    await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click('#v-customer .row[data-job]:has(.chip.days)'); await p.waitForSelector('#v-job:not([hidden]) .card');   // העבודה עם ההצעה שנשלחה (הסדר לפי עדכון אחרון משתנה)
     const jobText = await p.locator('#v-job').textContent();
     ok(`${label}: job screen shows quote total`, jobText.includes('10,030'), '');
     ok(`${label}: job screen shows visit notes`, jobText.includes('רוכבים 20 מטר'));

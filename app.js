@@ -1,6 +1,6 @@
 /* אור בגג 2 — שלב א': התחברות, לקוחות, כרטיס לקוח, עבודה והצעה (צפייה).
    הענן (Supabase, סכימת app2) הוא האמת. עותק לקריאה נשמר בדפדפן כדי שהמסך ייפתח מיד גם בלי רשת. */
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 const SB_URL = 'https://wxnmujdcrqsgokzlptkh.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
 const sb = supabase.createClient(SB_URL, SB_ANON, { db: { schema: 'app2' }, auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ob2_auth' } });
@@ -8,6 +8,7 @@ const sb = supabase.createClient(SB_URL, SB_ANON, { db: { schema: 'app2' }, auth
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const STAGES = ['lead', 'visit', 'quote', 'sent', 'approved', 'doing', 'paid'];
+const ACTIVE_STAGES = ['approved', 'doing'];   // במסך-לקוח, תחת "עבודות": רק מה שאושר ועוד לא הסתיים (בקשת אור 05.10); השאר מקופל
 const STAGE_HE = { lead: 'פנייה', visit: 'ביקור', quote: 'הצעה', sent: 'נשלחה', approved: 'אושרה', doing: 'בביצוע', paid: 'שולם', lost: 'לא יצא' };
 const money = (n) => (n == null || isNaN(n)) ? '' : Number(n).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪';
 const dateHe = (t) => { if (!t) return ''; const d = new Date(t); return isNaN(d) ? '' : d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: '2-digit' }); };
@@ -146,11 +147,24 @@ function renderCustomer() {
   const v = $('#v-customer'); v.hidden = false;
   const c = custOf(S.params.id); if (!c) return v.innerHTML = '<div class="empty">לקוח לא נמצא</div>';
   const js = jobsOf(c.id);
+  const act = js.filter((j) => ACTIVE_STAGES.includes(j.stage)), rest = js.filter((j) => !ACTIVE_STAGES.includes(j.stage));
+  const cqs = js.flatMap((j) => quotesOf(j.id)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button>
   <div class="card"><h2>${esc(c.name)}</h2><div class="kv">${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a><a href="#" data-act="wa" class="btn sm wa">וואטסאפ</a>` : ''}${c.address ? `<span>${esc(c.address)}</span>` : ''}</div>${c.notes ? `<div class="dim" style="margin-top:6px;white-space:pre-line">${esc(c.notes)}</div>` : ''}${roofLine(c) ? `<div class="dim" style="margin-top:6px">גג: ${roofLine(c)}</div>` : ''}${dupOf(c) ? `<div class="alert" style="margin-top:8px"><span>יש לקוח נוסף עם אותו טלפון: <b>${esc(dupOf(c).name)}</b></span><button class="btn sm" data-merge="${dupOf(c).id}">מזג לכאן</button></div>` : ''}<div class="actions"><button class="btn sm ghost" data-act="report">דוח ייעוץ</button><button class="btn sm pri" data-act="new-job">עבודה חדשה</button><button class="btn sm" data-act="edit-customer">ערוך</button><button class="btn sm danger" data-act="trash-customer">לסל</button></div></div>
-  <div class="section">עבודות · ${js.length}</div>
-  <div class="list">${js.map((j) => { const qs = quotesOf(j.id); const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
-    return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(j.title || (qs[0] && qs[0].items && qs[0].items[0] && qs[0].items[0].title) || 'עבודה')}</div><div class="sub">${dateHe(j.created_at)}${qs.length ? ' · ' + qs.length + ' הצעות' : ''}${j.price_agreed ? ' · ' + money(j.price_agreed) : ''}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}<span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`; }).join('') || '<div class="empty">אין עבודות</div>'}</div>`;
+  ${cqs.length ? `<div class="section">הצעות מחיר · ${cqs.length}</div><div class="list">${cqs.map(quoteRow).join('')}</div>` : ''}
+  <div class="section">עבודות · ${act.length}</div>
+  <div class="list">${act.map(jobRow).join('') || '<div class="empty">אין עבודות בביצוע</div>'}</div>
+  ${rest.length ? `<details class="more-jobs"><summary class="section">עבודות אחרות · ${rest.length} — ביקורים, הצעות ועבודות שהסתיימו</summary><div class="list">${rest.map(jobRow).join('')}</div></details>` : ''}`;
+}
+function jobRow(j) {
+  const qs = quotesOf(j.id); const days = j.stage === 'sent' ? daysSince(j.quote_sent_at) : null;
+  return `<div class="row" data-job="${j.id}"><div class="main"><div class="name">${esc(j.title || (qs[0] && qs[0].items && qs[0].items[0] && qs[0].items[0].title) || 'עבודה')}</div><div class="sub">${dateHe(j.created_at)}${qs.length ? ' · ' + qs.length + ' הצעות' : ''}${j.price_agreed ? ' · ' + money(j.price_agreed) : ''}</div></div>${days != null ? `<span class="chip days">${days} ימים</span>` : ''}<span class="chip ${j.stage}">${STAGE_HE[j.stage]}</span></div>`;
+}
+// שורת-הצעה מקופלת: מספר, מתי נכתבה, סטטוס וסכום — הסעיפים רק בלחיצה (בקשת אור 05.10)
+function quoteRow(q) {
+  const st = { draft: 'טיוטה', sent: 'נשלחה ' + dateHe(q.sent_at), accepted: 'אושרה', rejected: 'נדחתה' }[q.status] || q.status;
+  const cls = q.status === 'sent' ? 'sent' : q.status === 'accepted' ? 'approved' : q.status === 'rejected' ? 'lost' : 'quote';
+  return `<div class="row" data-quote="${q.id}"><div class="main"><div class="name">${q.addon ? 'תוספת' : 'הצעה'} ${esc(q.number || '')}</div><div class="sub">נכתבה ${dateHe(q.created_at)} · ${money(q.total)}</div></div><span class="chip ${cls}">${st}</span></div>`;
 }
 function quoteBlock(q) {
   const items = (q.items || []).filter((i) => i.visible !== false);
@@ -172,7 +186,7 @@ function renderJob() {
   ${j.problem ? `<div style="margin-top:8px"><b>הבעיה:</b> ${esc(j.problem)}</div>` : ''}<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><label class="dim" for="j-notes">מהביקור: מטראז'ים והערות</label><button class="btn sm" data-act="voice" id="voice-btn">הקלטה</button></div><textarea id="j-notes" class="txt" rows="3" placeholder="למשל: רוכבים 20 מטר, קופינג 10 מטר">${esc(j.visit_notes || '')}</textarea></div><div class="actions">${(NEXT[j.stage] || []).map((s) => `<button class="btn sm ${s === 'lost' ? 'danger' : s === 'lead' ? '' : 'now'}" data-stage="${s}">${NEXT_HE[s]}</button>`).join('')}${j.stage === 'sent' && c.phone ? `<a class="btn sm wa" target="_blank" href="${waLink(c.phone, WA_FOLLOWUP)}">תזכורת בוואטסאפ</a>` : ''}<button class="btn sm ghost" data-act="trash-job">לסל</button></div></div>
   <div class="two"><div>
   <div class="section">ממצאים מהגג · ${findingsOf(j.id).length}</div><div class="card">${findingsOf(j.id).map((f) => { const m = f.media_id && D.media.find((x) => x.id === f.media_id); return `<div class="qitem" data-finding="${f.id}" style="cursor:pointer"><div style="display:flex;gap:10px;align-items:center;min-width:0">${m && m.thumb_data ? `<img src="${m.thumb_data}" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">` : ''}<div><div class="t">${esc(f.title)}</div><div class="dim">${f.qty} ${esc(f.unit || '')}${f.price_per_unit ? ' × ' + money(f.price_per_unit) : ''}</div></div></div><b>${f.price_per_unit ? money(f.qty * f.price_per_unit) : ''}</b></div>`; }).join('') || '<div class="dim">על הגג: כל ממצא עם תמונה וכמות, וההצעה בערב כבר מלאה.</div>'}<div class="actions"><button class="btn sm pri" data-act="new-finding">ממצא חדש</button>${findingsOf(j.id).length ? '<button class="btn sm ghost" data-act="clear-findings">נקה ממצאים</button>' : ''}</div></div>
-  <div class="section">הצעות מחיר · ${qs.length}</div>${qs.map((q) => `<div data-quote="${q.id}" style="cursor:pointer">${quoteBlock(q)}</div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
+  <div class="section">הצעות מחיר · ${qs.length}</div>${qs.length ? `<div class="list">${qs.map(quoteRow).join('')}</div>` : ''}<div class="actions"><button class="btn sm pri" data-act="new-quote">${qs.length ? 'הצעה נוספת' : 'בנה הצעת מחיר'}</button></div>
   ${(j.price_agreed || ps.length || ['approved', 'doing', 'paid'].includes(j.stage)) ? `<div class="section">כסף</div><div class="card"><div class="total"><span>סוכם</span><span>${money(j.price_agreed)}</span></div><div class="total" style="color:var(--ok)"><span>שולם</span><span>${money(paid)}</span></div>${j.price_agreed ? `<div class="total" style="color:var(--acc)"><span>נשאר</span><span>${money(Math.max(0, j.price_agreed - paid))}</span></div>` : ''}${ps.map((p) => `<div class="qitem"><span>${dateHe(p.paid_at)} ${esc(p.method || '')}${p.invoice_issued ? ' · חשבונית הוצאה' : ` · <b style="color:var(--warn)">בלי חשבונית</b> <button class="btn sm ghost" data-inv="${p.id}">הוצאתי חשבונית</button>`}</span><b>${money(p.amount)}</b></div>`).join('')}<div class="actions"><button class="btn sm pri" data-act="add-payment">רשום תשלום</button></div></div>` : ''}
   ${['approved', 'doing', 'paid'].includes(j.stage) ? execHtml(j) : ''}
   </div><div>

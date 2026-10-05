@@ -87,7 +87,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.fill('#j-notes', 'רוכבים 20 מטר'); await p.locator('#j-notes').blur(); await p.waitForTimeout(200);
   await ctx.setOffline(false); await p.evaluate(() => DB.sync()); await settle(p);
   const ctx2 = await b.newContext({ viewport: { width: 1280, height: 800 }, locale: 'he-IL' }); const p2 = await login(ctx2);
-  await p2.fill('#search', N2); await p2.click('#cust-list .row'); await p2.click('#v-customer .row[data-job]'); await p2.waitForSelector('#v-job:not([hidden]) .card');
+  await p2.fill('#search', N2); await p2.click('#cust-list .row'); await p2.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p2.click('#v-customer .row[data-job]'); await p2.waitForSelector('#v-job:not([hidden]) .card');
   ok('S1: desktop sees 3 photos, none pending', (await p2.locator('#v-job .thumbs .th').count()) === 3 && (await p2.locator('#v-job .thumbs .th.pending').count()) === 0);
   ok('S1: desktop sees notes', (await p2.locator('#j-notes').inputValue()).includes('רוכבים 20 מטר'));
   ok('S1: full photo url works', !!(await p2.evaluate(async () => { const m = D.media.find((m) => m.storage_path && m.job_id === S.params.id); return m && (await DB.photoUrl(m.storage_path)); })));
@@ -95,7 +95,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
 
   // ---- S2: הצעה במחשב, סגירה באמצע → בטלפון אותה טיוטה ----
   const pd = await login(await b.newContext({ viewport: { width: 1280, height: 800 }, locale: 'he-IL' }));
-  await pd.fill('#search', N2); await pd.click('#cust-list .row'); await pd.click('#v-customer .row[data-job]'); await pd.waitForSelector('#v-job:not([hidden]) .card');
+  await pd.fill('#search', N2); await pd.click('#cust-list .row'); await pd.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await pd.click('#v-customer .row[data-job]'); await pd.waitForSelector('#v-job:not([hidden]) .card');
   await pd.click('[data-act="new-quote"]'); await pd.waitForSelector('#v-quote:not([hidden]) #q-items');
   await pd.click('[data-act="add-item"]'); await pd.fill('#i-title', 'חידוש רוכבים'); await pd.fill('#i-qty', '20'); await pd.fill('#i-unit', 'מטר'); await pd.fill('#i-ppu', '300'); await pd.click('#i-save'); await pd.waitForSelector('#sheet-wrap', { state: 'detached' });
   await pd.click('[data-act="add-item"]'); await pd.fill('#i-title', 'קופינג'); await pd.fill('#i-qty', '10'); await pd.fill('#i-ppu', '250'); await pd.click('#i-save'); await pd.waitForSelector('#sheet-wrap', { state: 'detached' });
@@ -104,7 +104,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const qnum = (await pd.locator('#q-number').textContent()).trim(); ok('S2: number assigned YYYY-NNN', /^\d{4}-\d{3}$/.test(qnum), qnum);
   await pd.screenshot({ path: OUT + '/s2-desktop-quote.png', fullPage: true });
   await settle(pd); await pd.context().close();
-  await p.evaluate(() => DB.loadAll().then(render)); await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  await p.evaluate(() => DB.loadAll().then(render)); await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
   ok('S2: phone shows same draft', (await p.locator('#q-totals').textContent()).includes('10,030') && (await p.locator('#v-quote').textContent()).includes('חידוש רוכבים'));
   await p.screenshot({ path: OUT + '/s2-phone-quote.png', fullPage: true });
   // ---- S5: עריכה אחרי "נשלחה" → גרסה 1 נשמרת, גרסה 2 מוצגת ----
@@ -135,7 +135,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const mt = await p.locator('#v-money').textContent(); ok('money: screen lists debt and no-invoice payment', mt.includes('5,502') && mt.includes('הוצאתי חשבונית'));
   await p.screenshot({ path: OUT + '/money.png' });
   await p.click('#v-money [data-inv]'); await p.waitForTimeout(200);
-  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job:not([hidden]) .card');
   ok('money: invoice marked', (await p.locator('#v-job').textContent()).includes('חשבונית הוצאה'));
   await p.click('[data-act="add-payment"]'); await p.click('#p-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
   await p.waitForFunction(() => document.querySelector('#v-job .chip.paid'), null, { timeout: 5000 }).catch(() => {});
@@ -168,7 +168,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   const merged = await p.evaluate(async (id) => (await sb.from('customers').select('phone,address').eq('id', id).single()).data, cc);
   ok('adv: concurrent field edits both survive', merged && merged.phone === '0500000002' && merged.address === 'כתובת חדשה מ-A', JSON.stringify(merged));
   // (2-4) כמות שלילית/אפס נחסמת; הנחה מוגבלת
-  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N2); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click('#v-customer .row[data-job]'); await p.waitForSelector('#v-job [data-quote]'); await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items');
   const nBefore = await p.evaluate(() => Q.cur(S.params.id).items.length);
   await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'שלילי'); await p.fill('#i-qty', '-5'); await p.fill('#i-ppu', '100'); await p.click('#i-save'); await p.waitForTimeout(200);
   ok('adv: negative qty blocked', (await p.evaluate(() => Q.cur(S.params.id).items.length)) === nBefore && (await p.locator('#sheet-wrap').count()) === 1);
@@ -220,7 +220,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.click('#v-calendar [data-back]'); await p.waitForSelector('#v-customers:not([hidden])');
   await p.click(`#cust-list .row[data-task]:has-text("${TK}") [data-task-done]`); await p.waitForFunction((tk) => !document.querySelector('#cust-list').textContent.includes(tk), TK, { timeout: 5000 }).catch(() => {}); ok('C2: task done disappears', !(await p.locator('#cust-list').textContent()).includes(TK));
   // רגרסיה (ביקורת גל א'): שני מכשירים מוסיפים ממצא לאותה עבודה בלי רענון — שניהם נשארים; מחיר שלילי נחסם; לחיצה כפולה = הצעה אחת
-  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
   const jid2 = await p.evaluate(() => S.params.id);
   const ctxR = await b.newContext({ viewport: { width: 1200, height: 800 } }); const pR = await login(ctxR); await pR.evaluate((id) => show('job', { id }), jid2); await pR.waitForSelector('#v-job:not([hidden]) .card');
   await p.click('[data-act="new-finding"]'); await p.fill('#fi-title', 'ממצא A'); await p.click('#fi-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' }); await settle(p);
@@ -236,8 +236,10 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   await p.click('#tabs [data-tab="more"]'); await p.click('[data-open="settings"]'); await p.waitForSelector('#v-settings:not([hidden])');
   await p.click('[data-act="worker-add"]'); await p.fill('#wk-name', 'e2e פועל'); await p.fill('#wk-rate', '600'); await p.click('#wk-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
   ok('B4: worker listed in settings', (await p.locator('#v-settings').textContent()).includes('e2e פועל'));
-  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
-  await p.click('[data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items'); await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'e2e סעיף לביצוע'); await p.fill('#i-qty', '2'); await p.fill('#i-ppu', '1500'); await p.click('#i-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' }); await p.click('[data-act="mark-sent"]'); await p.waitForTimeout(300); await p.click('#v-quote [data-back]'); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
+  ok('C1: customer shows quotes as collapsed rows', await p.evaluate(() => document.querySelectorAll('#v-customer .row[data-quote]').length > 0 && !document.querySelector('#v-customer .qitem')));
+  ok('C1: job shows quotes as collapsed rows', await p.evaluate(() => document.querySelectorAll('#v-job .row[data-quote]').length > 0 && !document.querySelector('#v-job [data-quote] .qitem')));
+  await p.click('#v-job [data-quote]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items'); await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'e2e סעיף לביצוע'); await p.fill('#i-qty', '2'); await p.fill('#i-ppu', '1500'); await p.click('#i-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' }); await p.click('[data-act="mark-sent"]'); await p.waitForTimeout(300); await p.click('#v-quote [data-back]'); await p.waitForSelector('#v-job:not([hidden]) .card');
   await p.click('[data-stage="approved"]'); await p.waitForFunction(() => document.querySelectorAll('#v-job [data-task-done]').length >= 2, null, { timeout: 8000 }).catch(() => {});
   const nTasks = await p.locator('#v-job [data-task-done]').count(); ok('B1: approval created a task per item', nTasks >= 2, nTasks + ' tasks');
   await p.click('#v-job [data-task-done]'); await p.waitForFunction(() => document.querySelector('#v-job').textContent.includes('1/'), null, { timeout: 5000 }).catch(() => {});
@@ -253,7 +255,7 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   ok('B4: worker without receipt flagged', jt.includes('בלי חשבונית'));
   await p.click('#tabs [data-tab="money"]'); const mtB = await p.locator('#v-money').textContent(); ok('B3/B4: money tab shows receipts-to-collect + profit', mtB.includes('לקבל חשבונית/קבלה · 1') && mtB.includes('רווח לעבודה'));
   await p.click('#v-money [data-exp-receipt]'); await p.waitForTimeout(300); ok('B4: receipt marked', !(await p.locator('#v-money').textContent()).includes('לקבל חשבונית/קבלה'));
-  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
+  await p.click('#tabs [data-tab="today"]'); await p.fill('#search', N3); await p.click('#cust-list .row'); await p.evaluate(() => document.querySelectorAll('#v-customer details').forEach((d) => { d.open = true; })); await p.click(`#v-customer .row[data-job]:has-text("e2e ביקור היום")`); await p.waitForSelector('#v-job:not([hidden]) .card');
   await p.click('[data-act="addon"]'); await p.waitForSelector('#v-quote:not([hidden]) #q-items'); ok('B5: addon quote opened', (await p.locator('#v-quote').textContent()).includes('תוספת'));
   await p.click('[data-act="add-item"]'); await p.fill('#i-title', 'תוספת: החלפת מרזב'); await p.fill('#i-qty', '1'); await p.fill('#i-ppu', '1000'); await p.click('#i-save'); await p.waitForSelector('#sheet-wrap', { state: 'detached' });
   await p.click('[data-act="accept-addon"]'); await settle(p); const agreedB2 = await p.evaluate(() => live(D.jobs).find((j) => j.id === Q.cur(S.params.id).job_id).price_agreed);
