@@ -1,6 +1,6 @@
 /* אור בגג 2 — שלב א': התחברות, לקוחות, כרטיס לקוח, עבודה והצעה (צפייה).
    הענן (Supabase, סכימת app2) הוא האמת. עותק לקריאה נשמר בדפדפן כדי שהמסך ייפתח מיד גם בלי רשת. */
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.3';
 const SB_URL = 'https://wxnmujdcrqsgokzlptkh.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
 const sb = supabase.createClient(SB_URL, SB_ANON, { db: { schema: 'app2' }, auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ob2_auth' } });
@@ -34,7 +34,7 @@ const workers = () => ((D.settings && D.settings.workers) || []);
 const findingsOf = (jid) => live(D.findings).filter((f) => f.job_id === jid).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
 // ---------- ניווט ----------
-const S = { view: 'today', stack: [], tab: 'today', q: '' };
+const S = { view: 'work', stack: [], tab: 'work', q: '' };   // 18.10, אור: נפתחת על הלקוחות ("היום" ריק כשאין ביקורים)
 function show(view, params, fromPop) {
   if (view !== S.view || JSON.stringify(params) !== JSON.stringify(S.params)) S.stack.push({ view: S.view, params: S.params });
   S.view = view; S.params = params || {};
@@ -45,7 +45,7 @@ function show(view, params, fromPop) {
 function back(fromPop) {
   if ($('#sheet-wrap')) { closeSheet(); return; }
   if (!fromPop && history.state && history.state.ob2 > 0) { history.back(); return; }   // popstate מבצע את החזרה (פעם אחת)
-  const p = S.stack.pop(); if (!p) { S.view = 'today'; S.params = {}; render(); return; }
+  const p = S.stack.pop(); if (!p) { S.view = 'work'; S.params = {}; render(); return; }
   S.view = p.view; S.params = p.params || {}; render();
 }
 window.addEventListener('popstate', () => { if (S.stack.length || $('#sheet-wrap')) back(true); });
