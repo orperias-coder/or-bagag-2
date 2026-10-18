@@ -147,3 +147,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .dg-filter button.on{background:var(--brown);color:#fff;border-color:var(--brown)}
 .dg-item{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
 .dg-item .main{flex:1;min-width:0}.dg-item .name{font-weight:700}.dg-item .sub{color:var(--dim);font-size:14px}
+/* לידים מוואטסאפ */
+.wa-head{display:flex;align-items:baseline;gap:8px;margin:6px 2px 8px}.wa-head b{font-size:20px;font-weight:900;color:var(--brown);flex:1}
+#v-leads .dg-filter{margin-bottom:6px;flex-wrap:wrap}
+#v-leads details summary{cursor:pointer;list-style:none}
+.wa-st{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px}
+.wa-media{display:flex;flex-wrap:wrap;gap:6px}
+.wa-th{width:84px;height:84px;border-radius:10px;border:0;background:var(--sand);padding:0;overflow:hidden;position:relative;cursor:pointer;display:grid;place-items:center}
+.wa-th img{width:100%;height:100%;object-fit:cover}
+.wa-th .play{position:absolute;inset:auto;color:#fff;background:#0008;border-radius:50%;width:34px;height:34px;display:grid;place-items:center;font-size:14px}
+.wa-msgs{display:flex;flex-direction:column;gap:8px}
+.wa-msg{background:var(--bg);border-radius:12px;padding:8px 10px;max-width:90%;line-height:1.5;white-space:pre-wrap}
+.wa-msg.me{background:var(--brown-l);align-self:flex-end}
+.wa-msg small{display:block;color:var(--dim);font-size:12px}
+#lightbox video{max-width:100%;max-height:80vh}

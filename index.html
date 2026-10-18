@@ -48,6 +48,8 @@
     <section id="v-print" class="view" hidden></section>
     <section id="v-settings" class="view" hidden></section>
     <section id="v-catalog" class="view" hidden></section>
+    <section id="v-leads" class="view" hidden></section>
+    <section id="v-lead" class="view" hidden></section>
   </main>
 
   <nav id="tabs" hidden>
@@ -70,7 +72,7 @@
 <div id="qq-jobs" hidden></div><div id="qq-hint" class="dim"></div><button class="btn pri" id="qq-go" disabled>המשך לעורך ההצעה</button></div></template>
 <template id="t-digest"><div class="sheet"><div class="sheet-h"><b>מה קרה בוואטסאפ</b><button class="btn sm ghost" data-close>סגור</button></div><div class="dim" id="dg-when"></div>
 <div class="dg-counts" id="dg-counts"></div><p id="dg-prose" class="dg-prose"></p>
-<div class="dg-filter"><button data-dgf="all">הכול</button><button data-dgf="new">חדשים</button><button data-dgf="wait">מחכים לך</button></div><div id="dg-items"></div><button class="btn pri" id="dg-seen">ראיתי</button></div></template>
+<div class="dg-filter"><button data-dgf="all">הכול</button><button data-dgf="new">חדשים</button><button data-dgf="wait">מחכים לך</button></div><div id="dg-items"></div><div class="row2"><button class="btn pri" id="dg-seen">ראיתי</button><button class="btn" data-open="leads">לכל הלידים</button></div></div></template>
 <template id="t-digest-list"><div class="sheet"><div class="sheet-h"><b>סיכומי סריקה</b><button class="btn sm ghost" data-close>סגור</button></div><div id="dgl-list" class="list"></div></div></template>
 <template id="t-lead-form"><div class="sheet"><div class="sheet-h"><b>פנייה חדשה מהודעה</b><button class="btn sm ghost" data-close>סגור</button></div><div class="dim">הדבק את ההודעה (או שתף מוואטסאפ ← אור בגג). הפרטים מתמלאים לבד — תקן אם צריך.</div>
 <label>ההודעה<textarea id="ld-text" rows="4" placeholder="הדבק כאן"></textarea></label><label>שם<input id="ld-name" autocomplete="off"></label><label>טלפון<input id="ld-phone" type="tel" dir="ltr"></label><label>כתובת<input id="ld-address" autocomplete="off"></label><button class="btn pri" id="ld-save">פתח פנייה</button></div></template>
@@ -112,7 +114,7 @@
 <template id="t-confirm"><div class="sheet"><b id="confirm-title"></b><div class="dim" id="confirm-msg"></div><div class="row2"><button class="btn" data-close>בטל</button><button class="btn danger" id="confirm-yes">כן</button></div></div></template>
 <template id="t-pick-customer"><div class="sheet"><div class="sheet-h"><b>לאיזה לקוח?</b><button class="btn sm ghost" data-close>סגור</button></div><input id="pick-search" placeholder="חיפוש" autocomplete="off"><div class="list" id="pick-list"></div></div></template>
 <input id="photo-in" type="file" accept="image/*" multiple capture="environment" hidden>
-<div id="lightbox" hidden><img alt=""><div class="row2 lb-tags"></div><button class="btn sm" data-close-lb>סגור</button></div>
+<div id="lightbox" hidden><img alt=""><video controls playsinline preload="metadata" hidden></video><div class="row2 lb-tags"></div><button class="btn sm" data-close-lb>סגור</button></div>
 <div id="toast" hidden></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

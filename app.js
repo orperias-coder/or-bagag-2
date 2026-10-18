@@ -1,6 +1,6 @@
 /* אור בגג 2 — שלב א': התחברות, לקוחות, כרטיס לקוח, עבודה והצעה (צפייה).
    הענן (Supabase, סכימת app2) הוא האמת. עותק לקריאה נשמר בדפדפן כדי שהמסך ייפתח מיד גם בלי רשת. */
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const SB_URL = 'https://wxnmujdcrqsgokzlptkh.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
 const sb = supabase.createClient(SB_URL, SB_ANON, { db: { schema: 'app2' }, auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ob2_auth' } });
@@ -16,7 +16,7 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], expenses: [], settings: null, uid: null, loadedAt: 0, digests: [] };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], expenses: [], settings: null, uid: null, loadedAt: 0, digests: [], waLeads: null, waAt: 0 };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
@@ -52,9 +52,9 @@ window.addEventListener('popstate', () => { if (S.stack.length || $('#sheet-wrap
 try { history.replaceState({ ob2: 0 }, ''); } catch (e) {}
 function render() {
   document.querySelectorAll('.view').forEach((v) => v.hidden = true);
-  const map = { today: renderToday, calendar: renderCalendar, customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
+  const map = { leads: renderLeads, lead: renderLead, today: renderToday, calendar: renderCalendar, customers: renderCustomers, work: renderWork, customer: renderCustomer, job: renderJob, money: renderMoney, more: renderMore, trash: renderTrash, quote: renderQuote, print: renderPrint, settings: renderSettings, catalog: renderCatalog };
   (map[S.view] || renderToday)(); renderAlerts();
-  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customers: 'today', calendar: 'today', customer: 'today', job: 'today', quote: 'today', print: 'today', trash: 'more', settings: 'more', catalog: 'more' }[S.view] || S.view)));
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === ({ customers: 'today', calendar: 'today', customer: 'today', job: 'today', quote: 'today', print: 'today', trash: 'more', settings: 'more', catalog: 'more', leads: 'more', lead: 'more' }[S.view] || S.view)));
 }
 
 // ---------- מסכים ----------
@@ -244,7 +244,7 @@ async function openMedia(id) {
   const m = D.media.find((x) => x.id === id); if (!m) return;
   if (!m.storage_path) return toast('התמונה עדיין לא עלתה לענן — תיפתח כשתהיה רשת');
   const url = await DB.photoUrl(m.storage_path); if (!url) return toast('לא הצלחתי לפתוח את התמונה');
-  const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.dataset.media = id; lb.querySelector('.lb-tags').innerHTML = [['roof', 'גג'], ['outside', 'חוץ'], ['interior', 'רטיבות בפנים'], ['', 'אחר']].map(([k, he]) => `<button class="btn sm ${(m.tag || '') === k ? 'pri' : ''}" data-tag="${k}">${he}</button>`).join(''); lb.hidden = false;
+  const lb = $('#lightbox'); closeLbVideo(); lb.querySelector('img').hidden = false; lb.querySelector('img').src = url; lb.dataset.media = id; lb.querySelector('.lb-tags').innerHTML = [['roof', 'גג'], ['outside', 'חוץ'], ['interior', 'רטיבות בפנים'], ['', 'אחר']].map(([k, he]) => `<button class="btn sm ${(m.tag || '') === k ? 'pri' : ''}" data-tag="${k}">${he}</button>`).join(''); lb.hidden = false;
 }
 const BIZ_DEFAULT = { businessName: 'אור בגג', ownerName: 'אור פריאס', phone: '054-5725681', email: 'or.perias@gmail.com', taxId: '307951517' };
 const UNFORESEEN_DEFAULT = 'במידה ויתגלו במהלך העבודה כשלים, נזקים או צרכים שלא נצפו ואינם כלולים בהצעה זו — יינתן עבורם תמחור נפרד בתיאום מראש עם הלקוח.';
@@ -354,6 +354,7 @@ function renderMore() {
   const b = { ...BIZ_DEFAULT, ...((D.settings && D.settings.business) || {}) }, t = Q.tpl(), cat = ((D.settings && D.settings.catalog) || []);
   v.innerHTML = `<div class="card"><b>אור בגג</b> · גרסה ${APP_VERSION}<div class="dim">עודכן ${D.loadedAt ? new Date(D.loadedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '—'} · ${live(D.customers).length} לקוחות · ${live(D.jobs).length} עבודות · ${live(D.quotes).length} הצעות</div>
   <div class="actions"><button class="btn sm" id="refresh">רענן מהענן</button><button class="btn sm" data-act="backup-file">גיבוי לקובץ</button><button class="btn sm ghost" id="logout">התנתק</button></div></div>
+  <div class="card" style="cursor:pointer" data-open="leads"><b>לידים מוואטסאפ</b>${D.waLeads ? ' · ' + D.waLeads.filter((l) => !waClosed(l)).length + ' פתוחים' : ''}<div class="dim">כל מה שהכלי במחשב מצא. סימון כאן מופיע גם במחשב.</div></div>
   <div class="card" style="cursor:pointer" data-open="digests"><b>סיכומי סריקת וואטסאפ</b> · ${D.digests.length}<div class="dim">מה הכלי במחשב מצא בכל סריקה.</div></div>
   <div class="card" style="cursor:pointer" data-open="trash"><b>סל המיחזור</b> · ${trashed} פריטים<div class="dim">שום דבר לא נמחק באמת. לחץ לשחזור.</div></div>
   <div class="card" style="cursor:pointer" data-open="catalog"><b>הקטלוג והמחירון</b> · ${cat.filter((c) => !c.hidden).length} פריטים<div class="dim">סעיפים מוכנים להצעות מחיר, מחירים לפני מע"מ.</div></div>
@@ -525,6 +526,71 @@ function openDigestList() {
   const w = sheet('t-digest-list');
   $('#dgl-list', w).innerHTML = D.digests.map((d) => { const x = d.data || {}; return `<div class="row" data-act="digest" data-id="${d.id}"><div class="main"><div class="name">${digestWhen(d)}</div><div class="sub">${x.newCount || 0} חדשים · ${x.awaitingCount || 0} מחכים · ${x.changedCount || 0} עודכנו</div></div>${d.seen_at ? '' : '<span class="chip days">חדש</span>'}</div>`; }).join('') || '<div class="empty">עוד לא הגיע סיכום. הוא מגיע אחרי הסריקה הבאה במחשב (12:00 או 20:00).</div>';
 }
+// ---------- לידים מוואטסאפ (18.10, אור: "להתעסק עם הלקוחות מתוך המקום הזה") ----------
+// הכלי במק שולח לכאן אחרי כל סריקה (app2.wa_leads). הסטטוס משותף: מה שמסמנים כאן מופיע בדשבורד במחשב תוך שניות, וההפך.
+const WA_ST = [['new', 'חדש'], ['replied', 'חזרתי אליו'], ['visit', 'קבעתי ביקור'], ['quote_sent', 'נשלחה הצעה'], ['approved', 'אישר'], ['done', 'טופל'], ['skip', 'לא רלוונטי']];
+const WA_ST_HE = Object.fromEntries(WA_ST);
+const WA_BANDS = [['to_close', 'לסגור'], ['hot', 'חם'], ['warm', 'פושר'], ['cold', 'קר']];
+const waClosed = (l) => ['done', 'skip'].includes(l.status);
+async function loadWaLeads(force) {
+  if (!force && D.waLeads && Date.now() - D.waAt < 10000) return;
+  try { const { data, error } = await sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,status_by,customer_id,last_activity,scanned_at').is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }); if (!error && data) { D.waLeads = data; D.waAt = Date.now(); } } catch (e) { console.warn(e); }
+}
+const waChip = (l) => { const d = l.data || {}; if (waClosed(l)) return `<span class="chip">${WA_ST_HE[l.status]}</span>`; if (l.status !== 'new') return `<span class="chip days">${WA_ST_HE[l.status]}</span>`; return d.awaiting ? '<span class="chip days">מחכה לך</span>' : (d.band_he ? `<span class="chip">${esc(d.band_he)}</span>` : ''); };
+const waRow = (l) => `<div class="row" data-wa="${esc(l.jid)}"><div class="main"><div class="name">${esc(l.name || l.phone || 'ללא שם')}${l.data && l.data.address ? ' · ' + esc(l.data.address) : ''}</div><div class="sub">${esc(l.summary || '')}</div></div>${waChip(l)}</div>`;
+function renderLeads() {
+  const v = $('#v-leads'); v.hidden = false; const tab = S.params.tab || 'leads';
+  if (!D.waLeads) { v.innerHTML = '<div class="empty">טוען את הלידים…</div>'; loadWaLeads(true).then(() => { if (S.view === 'leads') render(); }); return; }
+  const all = D.waLeads, open = all.filter((l) => !waClosed(l)), isJob = (l) => !!(l.data && l.data.band);
+  const lists = { leads: open.filter(isJob), work: open.filter((l) => !isJob(l)), closed: all.filter(waClosed) };
+  const fresh = all.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
+  let body = '';
+  if (tab === 'leads') body = WA_BANDS.map(([b, he]) => { const arr = lists.leads.filter((l) => l.data.band === b); if (!arr.length) return ''; const rows = `<div class="list">${arr.map(waRow).join('')}</div>`; return b === 'cold' ? `<details><summary class="section">${he} · ${arr.length}</summary>${rows}</details>` : `<div class="section${b === 'to_close' || b === 'hot' ? ' hot' : ''}">${he} · ${arr.length}</div>${rows}`; }).join('');
+  else body = lists[tab].length ? `<div class="list">${lists[tab].map(waRow).join('')}</div>` : '';
+  v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="wa-head"><b>לידים מוואטסאפ</b><span class="dim">${fresh ? 'נסרק ' + digestWhen({ scanned_at: fresh }) : ''}</span></div>
+  <div class="dg-filter">${[['leads', 'לידים', lists.leads.length], ['work', 'ביצוע וגבייה', lists.work.length], ['closed', 'טופלו', lists.closed.length]].map(([k, he, n]) => `<button data-wa-tab="${k}" class="${tab === k ? 'on' : ''}">${he} · ${n}</button>`).join('')}</div>${body || '<div class="empty">אין כאן כלום</div>'}`;
+}
+async function renderLead() {
+  const v = $('#v-lead'); v.hidden = false; const l = (D.waLeads || []).find((x) => x.jid === S.params.jid);
+  if (!l) { v.innerHTML = '<button class="back" data-back>‹ חזרה</button><div class="empty">הליד לא נמצא</div>'; return; }
+  const d = l.data || {}, msgs = d.messages || [], media = l.media || [];
+  const when = (u) => u ? new Date(u * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const cust = l.customer_id && custOf(l.customer_id);
+  v.innerHTML = `<button class="back" data-back>‹ לידים</button>
+  <div class="card"><h2>${esc(l.name || l.phone || 'ללא שם')}</h2><div class="dim">${esc([d.address, l.phone && normPhone(l.phone)].filter(Boolean).join(' · '))}${d.band_he ? ' · ' + esc(d.band_he) : ''}</div>
+  <p style="margin:8px 0 0;line-height:1.55">${esc(l.summary || '')}</p>${d.why ? `<div class="dim" style="margin-top:4px">${esc(d.why)}</div>` : ''}</div>
+  <div class="section">סטטוס</div><div class="wa-st">${WA_ST.map(([k, he]) => `<button class="btn sm ${l.status === k ? 'pri' : 'ghost'}" data-wa-st="${k}">${he}</button>`).join('')}</div>
+  ${l.status_by && l.status !== 'new' ? `<div class="dim" style="margin-top:4px">סומן ${l.status_by === 'phone' ? 'בטלפון' : l.status_by === 'mac' ? 'במחשב' : 'אוטומטית בסריקה'}</div>` : ''}
+  <div class="actions">${cust ? `<button class="btn pri" data-cust="${cust.id}">לכרטיס הלקוח</button>` : '<button class="btn pri" data-act="wa-to-cust">פתח כלקוח באפליקציה</button>'}${l.phone ? `<a class="btn wa" target="_blank" href="${waLink(l.phone)}">וואטסאפ</a>` : ''}</div>
+  ${(d.tasks || []).length ? `<div class="section">משימות</div><div class="card">${d.tasks.map((t) => `<div>• ${esc(t)}</div>`).join('')}</div>` : ''}
+  ${media.length ? `<div class="section">תמונות וסרטונים · ${media.length}</div><div class="card wa-media">${media.map((m, i) => `<button class="wa-th${m.type === 'video' ? ' vid' : ''}" data-wa-media="${i}" aria-label="${m.type === 'video' ? 'סרטון' : 'תמונה'}"><span class="dim">…</span></button>`).join('')}</div>` : ''}
+  ${msgs.length ? `<div class="section">הודעות אחרונות</div><div class="card wa-msgs">${msgs.map((m) => `<div class="wa-msg${m.me ? ' me' : ''}"><small>${m.me ? 'אור' : 'לקוח'} · ${when(m.at)}</small>${esc(m.text)}</div>`).join('')}</div>` : '<div class="dim" style="margin-top:12px">ההודעות של השיחה הזאת יופיעו אחרי הסריקה הבאה שבה יהיו בה הודעות חדשות.</div>'}`;
+  // תמונות ממוזערות: קישור חתום לכל אחת (הדלי פרטי)
+  v.querySelectorAll('[data-wa-media]').forEach(async (b) => { const m = media[Number(b.dataset.waMedia)]; const u = await DB.photoUrl(m.type === 'video' ? (m.poster || m.path) : m.path); if (u && m.type !== 'video') b.innerHTML = `<img src="${u}" alt="" loading="lazy">`; else if (u && m.poster) b.innerHTML = `<img src="${u}" alt=""><span class="play">▶</span>`; else b.innerHTML = m.type === 'video' ? '<span class="play">▶</span>' : '<span class="dim">אין</span>'; });
+}
+async function setWaStatus(jid, st) {
+  const l = (D.waLeads || []).find((x) => x.jid === jid); if (!l || l.status === st) return; const prev = [l.status, l.status_by, l.status_at];
+  const now = new Date().toISOString(); l.status = st; l.status_by = 'phone'; l.status_at = now; render();
+  const { error } = await sb.from('wa_leads').update({ status: st, status_by: 'phone', status_at: now, updated_at: now }).eq('jid', jid);
+  if (error) { [l.status, l.status_by, l.status_at] = prev; render(); toast('לא נשמר — בדוק רשת ונסה שוב'); } else toast('עודכן: ' + WA_ST_HE[st]);
+}
+function closeLbVideo() { const v = $('#lightbox video'); if (v) { v.pause(); v.removeAttribute('src'); v.hidden = true; } }
+async function openWaMedia(jid, i) {
+  const l = (D.waLeads || []).find((x) => x.jid === jid); const m = l && (l.media || [])[i]; if (!m) return;
+  const u = await DB.photoUrl(m.path); if (!u) return toast('לא הצלחתי לפתוח');
+  const lb = $('#lightbox'), img = lb.querySelector('img'), vid = lb.querySelector('video'); lb.dataset.media = ''; lb.querySelector('.lb-tags').innerHTML = '';
+  if (m.type === 'video') { img.hidden = true; vid.hidden = false; vid.src = u; } else { vid.hidden = true; vid.removeAttribute('src'); img.hidden = false; img.src = u; }
+  lb.hidden = false;
+}
+async function waToCustomer(jid) {   // כמו "פנייה מהודעה": אותו טלפון = אותו לקוח; הפנייה נושאת את התקציר
+  const l = (D.waLeads || []).find((x) => x.jid === jid); if (!l) return; const d = l.data || {};
+  const phone = l.phone ? normPhone(String(l.phone).replace(/^\+?972/, '0')) : '';
+  let c = phone ? live(D.customers).find((x) => normPhone(x.phone) === phone) : null;
+  if (!c) c = await DB.save('customers', { name: l.name || phone || 'לקוח מוואטסאפ', phone: phone || null, address: d.address || null, source: 'וואטסאפ' });
+  const j = await DB.save('jobs', { customer_id: c.id, title: null, problem: [l.summary, d.problem].filter(Boolean).join('\n').slice(0, 2000) || null, stage: 'lead', stage_changed_at: new Date().toISOString() });
+  l.customer_id = c.id; await sb.from('wa_leads').update({ customer_id: c.id, updated_at: new Date().toISOString() }).eq('jid', jid);
+  show('job', { id: j.id }); toast('נפתח לקוח עם פנייה. אפשר "+ הצעת מחיר".');
+}
 function openWaSheet(c) {
   const w = sheet('t-wa'); $('#wa-list', w).innerHTML = WA_TPL.map(([he, txt]) => `<a class="btn" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone, txt)}" data-close>${he}</a>`).join('') + `<a class="btn ghost" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone)}" data-close>הודעה חופשית</a>`;
 }
@@ -545,7 +611,7 @@ function renderTrash() {
 
 // ---------- אירועים ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],[data-exp],[data-exp-receipt],[data-worker-edit],[data-merge],#plus,#refresh,#logout');
+  const t = e.target.closest('[data-cust],[data-job],[data-back],[data-tab],[data-new],[data-act],[data-open],[data-restore],[data-stage],[data-media],[data-close-lb],[data-quote],[data-inv],[data-seen],[data-cat-edit],[data-tag],[data-finding],[data-task-done],[data-task],[data-exp],[data-exp-receipt],[data-worker-edit],[data-merge],#plus,#refresh,#logout,[data-wa],[data-wa-tab],[data-wa-st],[data-wa-media]');
   if (!t || t.id === 'photo-in') return;
   try { DB.used(t.dataset.act || (t.dataset.tab && 'tab:' + t.dataset.tab) || (t.dataset.stage && 'stage:' + t.dataset.stage) || (t.dataset.new && 'new:' + t.dataset.new) || t.id || 'row'); } catch (e) {}
   const cur = S.params && (S.view === 'customer' ? custOf(S.params.id) : null);
@@ -598,10 +664,16 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'new-quote' && job) { if (t.disabled) return; t.disabled = true; try { const q = await Q.create(job); show('quote', { id: q.id }); } finally { t.disabled = false; } }   // לחיצה כפולה לא יוצרת שתי הצעות
   else if (S.view === 'quote' && t.dataset.act) quoteAction(t.dataset.act, t);
   else if (t.dataset.act === 'print') { document.title = $('#v-print').dataset.title || document.title; window.print(); }
-  else if (t.hasAttribute('data-close-lb')) $('#lightbox').hidden = true;
+  else if (t.hasAttribute('data-close-lb')) { closeLbVideo(); $('#lightbox').hidden = true; }
   else if (t.dataset.open === 'trash') show('trash');
   else if (t.dataset.act === 'digest') { const d = D.digests.find((y) => y.id === t.dataset.id); if (d) openDigest(d); }
   else if (t.dataset.open === 'digests') openDigestList();
+  else if (t.dataset.open === 'leads') { closeSheet(); show('leads', { tab: 'leads' }); }
+  else if (t.dataset.wa) { await loadWaLeads(); show('lead', { jid: t.dataset.wa }); }
+  else if (t.dataset.waTab) { S.params = { tab: t.dataset.waTab }; render(); }
+  else if (t.dataset.waSt) setWaStatus(S.params.jid, t.dataset.waSt);
+  else if (t.dataset.waMedia !== undefined) openWaMedia(S.params.jid, Number(t.dataset.waMedia));
+  else if (t.dataset.act === 'wa-to-cust') { if (t.disabled) return; t.disabled = true; try { await waToCustomer(S.params.jid); } finally { t.disabled = false; } }
   else if (t.dataset.open === 'settings') show('settings');
   else if (t.dataset.open === 'catalog') show('catalog', { q: '' });
   else if (t.dataset.act === 'save-settings') { await DB.save('settings', { business: { ...((D.settings && D.settings.business) || {}), businessName: $('#s-biz').value.trim(), ownerName: $('#s-owner').value.trim(), phone: $('#s-phone').value.trim(), email: $('#s-email').value.trim(), taxId: $('#s-tax').value.trim() }, quote_template: { ...Q.tpl(), vatRate: Number($('#s-vat').value) || 18, validityDays: Number($('#s-valid').value) || 30, paymentTerms: $('#s-terms').value.trim(), standardNotes: $('#s-notes').value, unforeseenClause: $('#s-unf').value.trim() } }); toast('נשמר'); back(); }
@@ -620,7 +692,7 @@ $('#photo-in').addEventListener('change', async (e) => {
   if (forFinding && rows[0] && $('#fi-thumb')) { $('#fi-thumb').dataset.media = rows[0].id; $('#fi-thumb').innerHTML = `<img src="${rows[0].thumb_data}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px">`; return; }
   render(); toast(navigator.onLine ? 'התמונות נשמרו' : 'נשמרו במכשיר — יעלו כשתהיה רשת');
 });
-$('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') e.currentTarget.hidden = true; });
+$('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') { closeLbVideo(); e.currentTarget.hidden = true; } });
 $('#search').addEventListener('input', (e) => { S.q = e.target.value; if (S.view !== 'customers') { S.stack = []; S.view = 'customers'; } render(); });   // הקלדה מכל מקום = חיפוש בכל הלקוחות (גם מ"לקוחות" שמסנן רק עבודות פתוחות — אחרת לקוח שסיים לא נמצא; 18.10)
 $('#li-go').addEventListener('click', login);
 $('#li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
@@ -632,6 +704,8 @@ async function login() {
   await boot();
 }
 function setNet() { const n = $('#netdot'); n.classList.toggle('off', !navigator.onLine); const pc = DB.pendingCount(); n.classList.toggle('pending', pc > 0); n.title = !navigator.onLine ? 'אין רשת' : pc ? pc + ' עדיין לא עלו' : 'מסונכרן'; }
+document.addEventListener('visibilitychange', async () => { if (!document.hidden && ['leads', 'lead'].includes(S.view) && !$('#sheet-wrap')) { await loadWaLeads(true); render(); } });
+setInterval(async () => { if (!document.hidden && ['leads', 'lead'].includes(S.view) && !$('#sheet-wrap') && $('#lightbox').hidden) { await loadWaLeads(true); render(); } }, 15000);   // סימונים מהמחשב מופיעים כאן בלי לרענן
 window.addEventListener('online', setNet); window.addEventListener('offline', setNet);
 
 async function boot() {

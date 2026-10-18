@@ -29,7 +29,8 @@ create or replace function public._wa_owner(p_secret text) returns uuid language
 $$;
 revoke all on function public._wa_owner(text) from public, anon, authenticated;
 
--- הסריקה: תוכן הליד. סטטוס נכתב רק אם הסריקה זיהתה משהו (p_rows[i].status) והוא חדש יותר ממה שבענן.
+-- הסריקה: תוכן הליד. סטטוס נכתב רק אם הסריקה זיהתה משהו (p_rows[i].status) והוא חדש יותר ממה שבענן,
+-- או שאף אחד עוד לא סימן כלום (new מהסריקה) — כך הצעה שנשלחה לפני שהליד הגיע לענן עדיין נקלטת.
 create or replace function public.upsert_wa_leads(p_secret text, p_rows jsonb)
 returns int language plpgsql security definer set search_path = app2, pg_temp as $$
 declare v_owner uuid := public._wa_owner(p_secret); r jsonb; n int := 0;
@@ -43,9 +44,9 @@ begin
     on conflict (jid) do update set name = excluded.name, phone = excluded.phone, summary = excluded.summary, data = w.data || excluded.data,   -- מיזוג: הודעות משיחה שלא נסרקה עכשיו נשמרות
       media = case when jsonb_array_length(excluded.media) > 0 then excluded.media else w.media end,
       last_activity = excluded.last_activity, scanned_at = now(), updated_at = now(),
-      status = case when r ? 'status' and excluded.status_at > w.status_at then excluded.status else w.status end,
-      status_by = case when r ? 'status' and excluded.status_at > w.status_at then 'scan' else w.status_by end,
-      status_at = case when r ? 'status' and excluded.status_at > w.status_at then excluded.status_at else w.status_at end
+      status = case when r ? 'status' and (excluded.status_at > w.status_at or (w.status = 'new' and w.status_by = 'scan')) then excluded.status else w.status end,
+      status_by = case when r ? 'status' and (excluded.status_at > w.status_at or (w.status = 'new' and w.status_by = 'scan')) then 'scan' else w.status_by end,
+      status_at = case when r ? 'status' and (excluded.status_at > w.status_at or (w.status = 'new' and w.status_by = 'scan')) then excluded.status_at else w.status_at end
     where w.user_id = v_owner;
     n := n + 1;
   end loop;
