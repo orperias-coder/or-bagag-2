@@ -537,7 +537,19 @@ async function loadWaLeads(force) {
   try { const { data, error } = await sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,status_by,customer_id,last_activity,scanned_at').is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }); if (!error && data) { D.waLeads = data; D.waAt = Date.now(); } } catch (e) { console.warn(e); }
 }
 const waChip = (l) => { const d = l.data || {}; if (waClosed(l)) return `<span class="chip">${WA_ST_HE[l.status]}</span>`; if (l.status !== 'new') return `<span class="chip days">${WA_ST_HE[l.status]}</span>`; return d.awaiting ? '<span class="chip days">מחכה לך</span>' : (d.band_he ? `<span class="chip">${esc(d.band_he)}</span>` : ''); };
-const waRow = (l) => `<div class="row" data-wa="${esc(l.jid)}"><div class="main"><div class="name">${esc(l.name || l.phone || 'ללא שם')}${l.data && l.data.address ? ' · ' + esc(l.data.address) : ''}</div><div class="sub">${esc(l.summary || '')}</div></div>${waChip(l)}</div>`;
+const waAdded = (l) => { const t = l.data && l.data.first_seen; return t ? 'נוסף ' + dateHe(t * 1000).replace(/\.\d{2,4}$/, '') + ' ב-' + timeHe(t * 1000) + ' · ' + esc(l.data.source || 'סריקת וואטסאפ') : ''; };
+const waRow = (l) => `<div class="row" data-wa="${esc(l.jid)}"><div class="main"><div class="name">${esc(l.name || l.phone || 'ללא שם')}${l.data && l.data.address ? ' · ' + esc(l.data.address) : ''}</div><div class="sub">${esc(l.summary || '')}</div><div class="sub wa-added">${waAdded(l)}</div></div>${waChip(l)}</div>`;
+// 18.10, אור: "לא רשימה עצומה" — לפי יום ההוספה, השבוע האחרון פתוח; הישנים בקבוצה מקופלת אחת שנבנית רק כשפותחים
+const WA_RECENT_DAYS = 7;
+function waByDay(arr) {
+  const fs = (l) => (l.data && l.data.first_seen) || 0, cut = Date.now() / 1000 - WA_RECENT_DAYS * 86400;
+  const recent = arr.filter((l) => fs(l) >= cut).sort((a, b) => fs(b) - fs(a)), old = arr.filter((l) => fs(l) < cut);
+  const today = dayKey(Date.now()), yest = dayKey(Date.now() - 864e5), groups = [];
+  recent.forEach((l) => { const k = dayKey(fs(l) * 1000); let g = groups.find((x) => x.k === k); if (!g) groups.push(g = { k, t: fs(l), items: [] }); g.items.push(l); });
+  const head = (g) => g.k === today ? 'היום' : g.k === yest ? 'אתמול' : new Date(g.t * 1000).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' });
+  return groups.map((g) => `<div class="section${g.k === today ? ' hot' : ''}">${head(g)} · ${g.items.length}</div><div class="list">${g.items.map(waRow).join('')}</div>`).join('') +
+    (old.length ? `<details class="wa-old" data-wa-old${S.waOldOpen ? ' open' : ''}><summary class="section">ישנים יותר · ${old.length}</summary><div class="list">${S.waOldOpen ? old.sort((a, b) => fs(b) - fs(a)).map(waRow).join('') : ''}</div></details>` : '');   // נשאר פתוח גם אחרי הרענון האוטומטי
+}
 function renderLeads() {
   const v = $('#v-leads'); v.hidden = false; const tab = S.params.tab || 'leads';
   if (!D.waLeads) { v.innerHTML = '<div class="empty">טוען את הלידים…</div>'; loadWaLeads(true).then(() => { if (S.view === 'leads') render(); }); return; }
@@ -545,11 +557,14 @@ function renderLeads() {
   const lists = { leads: open.filter(isJob), work: open.filter((l) => !isJob(l)), closed: all.filter(waClosed) };
   const fresh = all.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   let body = '';
-  if (tab === 'leads') body = WA_BANDS.map(([b, he]) => { const arr = lists.leads.filter((l) => l.data.band === b); if (!arr.length) return ''; const rows = `<div class="list">${arr.map(waRow).join('')}</div>`; return b === 'cold' ? `<details><summary class="section">${he} · ${arr.length}</summary>${rows}</details>` : `<div class="section${b === 'to_close' || b === 'hot' ? ' hot' : ''}">${he} · ${arr.length}</div>${rows}`; }).join('');
-  else body = lists[tab].length ? `<div class="list">${lists[tab].map(waRow).join('')}</div>` : '';
+  body = lists[tab].length ? waByDay(lists[tab]) : '';
   v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="wa-head"><b>לידים מוואטסאפ</b><span class="dim">${fresh ? 'נסרק ' + digestWhen({ scanned_at: fresh }) : ''}</span></div>
   <div class="dg-filter">${[['leads', 'לידים', lists.leads.length], ['work', 'ביצוע וגבייה', lists.work.length], ['closed', 'טופלו', lists.closed.length]].map(([k, he, n]) => `<button data-wa-tab="${k}" class="${tab === k ? 'on' : ''}">${he} · ${n}</button>`).join('')}</div>${body || '<div class="empty">אין כאן כלום</div>'}`;
 }
+document.addEventListener('toggle', (e) => { const d = e.target; if (!d.matches || !d.matches('details[data-wa-old]')) return; S.waOldOpen = d.open; if (!d.open) return; const L = d.querySelector('.list'); if (L.childElementCount) return;
+  const tab = S.params.tab || 'leads', cut = Date.now() / 1000 - WA_RECENT_DAYS * 86400, isJob = (l) => !!(l.data && l.data.band);
+  const arr = (D.waLeads || []).filter((l) => (tab === 'closed' ? waClosed(l) : !waClosed(l) && (tab === 'leads' ? isJob(l) : !isJob(l))) && ((l.data && l.data.first_seen) || 0) < cut).sort((a, b) => ((b.data && b.data.first_seen) || 0) - ((a.data && a.data.first_seen) || 0));
+  L.innerHTML = arr.map(waRow).join(''); }, true);
 async function renderLead() {
   const v = $('#v-lead'); v.hidden = false; const l = (D.waLeads || []).find((x) => x.jid === S.params.jid);
   if (!l) { v.innerHTML = '<button class="back" data-back>‹ חזרה</button><div class="empty">הליד לא נמצא</div>'; return; }
@@ -558,7 +573,7 @@ async function renderLead() {
   const cust = l.customer_id && custOf(l.customer_id);
   v.innerHTML = `<button class="back" data-back>‹ לידים</button>
   <div class="card"><h2>${esc(l.name || l.phone || 'ללא שם')}</h2><div class="dim">${esc([d.address, l.phone && normPhone(l.phone)].filter(Boolean).join(' · '))}${d.band_he ? ' · ' + esc(d.band_he) : ''}</div>
-  <p style="margin:8px 0 0;line-height:1.55">${esc(l.summary || '')}</p>${d.why ? `<div class="dim" style="margin-top:4px">${esc(d.why)}</div>` : ''}</div>
+  <p style="margin:8px 0 0;line-height:1.55">${esc(l.summary || '')}</p>${waAdded(l) ? `<div class="dim" style="margin-top:4px">${waAdded(l)}</div>` : ''}${d.why ? `<div class="dim" style="margin-top:4px">${esc(d.why)}</div>` : ''}</div>
   <div class="section">סטטוס</div><div class="wa-st">${WA_ST.map(([k, he]) => `<button class="btn sm ${l.status === k ? 'pri' : 'ghost'}" data-wa-st="${k}">${he}</button>`).join('')}</div>
   ${l.status_by && l.status !== 'new' ? `<div class="dim" style="margin-top:4px">סומן ${l.status_by === 'phone' ? 'בטלפון' : l.status_by === 'mac' ? 'במחשב' : 'אוטומטית בסריקה'}</div>` : ''}
   <div class="actions">${cust ? `<button class="btn pri" data-cust="${cust.id}">לכרטיס הלקוח</button>` : '<button class="btn pri" data-act="wa-to-cust">פתח כלקוח באפליקציה</button>'}${l.phone ? `<a class="btn wa" target="_blank" href="${waLink(l.phone)}">וואטסאפ</a>` : ''}</div>
