@@ -23,7 +23,8 @@ create table if not exists app2.scan_writer (secret_sha256 text primary key, own
 alter table app2.scan_writer enable row level security;
 revoke all on app2.scan_writer from anon, authenticated;
 
-create or replace function app2.post_scan_digest(p_secret text, p_scan_id text, p_scanned_at timestamptz, p_prose text, p_data jsonb)
+-- הפונקציה בסכימת public (anon בלי USAGE על app2 — לא פותחים את כל הסכימה); כותבת ל-app2 כ-security definer
+create or replace function public.post_scan_digest(p_secret text, p_scan_id text, p_scanned_at timestamptz, p_prose text, p_data jsonb)
 returns uuid language plpgsql security definer set search_path = app2, pg_temp as $$
 declare v_owner uuid; v_id uuid;
 begin
@@ -36,7 +37,8 @@ begin
   returning id into v_id;
   return v_id;
 end $$;
-revoke all on function app2.post_scan_digest(text, text, timestamptz, text, jsonb) from public;
-grant execute on function app2.post_scan_digest(text, text, timestamptz, text, jsonb) to anon, authenticated;
+revoke all on function public.post_scan_digest(text, text, timestamptz, text, jsonb) from public;
+grant execute on function public.post_scan_digest(text, text, timestamptz, text, jsonb) to anon, authenticated;
 -- רישום הקוד (פעם אחת, מהמק, בלי לשמור את הקוד בקובץ הזה):
 --   insert into app2.scan_writer values (encode(sha256(convert_to('<secret>','UTF8')),'hex'), '2f8efb6f-3f81-4f1a-b7f9-c654bb4c0667') on conflict do nothing;
+drop function if exists app2.post_scan_digest(text, text, timestamptz, text, jsonb);   -- הגרסה הראשונה (בסכימה הלא-נגישה)
