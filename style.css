@@ -132,3 +132,18 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .more-jobs>summary{cursor:pointer;list-style:none}.more-jobs>summary::-webkit-details-marker{display:none}
 .more-jobs>summary::after{content:' ›';display:inline-block;transition:transform .15s}.more-jobs[open]>summary::after{transform:rotate(90deg)}
+/* הצעה מהירה: השורה שנבחרה בהשלמה */
+#qq-list .row.sel{background:var(--brown-l)}
+#qq-list .row{min-height:54px}
+/* סיכום סריקת הוואטסאפ */
+.digest-banner{background:var(--acc-l);border:1px solid #f3cf9c;margin:8px 0 10px}
+.dg-counts{display:flex;gap:8px}
+.dg-counts div{flex:1;background:var(--bg);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column}
+.dg-counts b{font-size:22px;color:var(--brown);font-variant-numeric:tabular-nums}
+.dg-counts span{font-size:13px;color:var(--dim)}
+.dg-prose{margin:0;line-height:1.6}
+.dg-filter{display:flex;gap:6px}
+.dg-filter button{height:34px;border-radius:999px;border:1px solid var(--line);background:var(--card);padding:0 12px;font-weight:700;font-size:13px;color:var(--dim);cursor:pointer}
+.dg-filter button.on{background:var(--brown);color:#fff;border-color:var(--brown)}
+.dg-item{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.dg-item .main{flex:1;min-width:0}.dg-item .name{font-weight:700}.dg-item .sub{color:var(--dim);font-size:14px}
