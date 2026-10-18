@@ -296,6 +296,22 @@ const settle = (p) => p.waitForFunction(() => DB.pendingCount() === 0, null, { t
   ok('D2: WhatsApp templates sheet', waN === 5 && waH.startsWith('https://wa.me/972' + LEADPH.slice(1)) && waH.includes(encodeURIComponent('אור בגג')), waH);
   await p.click('#sheet-wrap [data-close]'); await settle(p);
 
+  // ---- 18.10: הצעת מחיר מהירה מה-+ (בלי לפתוח פרויקט) ----
+  const QN = 'e2e מהירה ' + String(Date.now()).slice(-5), QPH = '05' + String(Date.now()).slice(-8);
+  await p.click('#tabs [data-tab="work"]'); await p.click('#plus'); await p.click('[data-new="quote"]'); await p.fill('#qq-q', QN);
+  ok('QQ1: new-customer option offered', (await p.locator('#qq-list .row[data-qq-new="1"]').count()) === 1);
+  await p.click('#qq-list .row[data-qq-new="1"]'); await p.fill('#qq-phone', QPH); await p.click('#qq-go'); await p.waitForSelector('#v-quote:not([hidden])', { timeout: 20000 });
+  const qq1 = await p.evaluate(([n, ph]) => { const c = live(D.customers).filter((x) => x.name === n); const js = c[0] ? jobsOf(c[0].id) : []; return { cust: c.length, phone: c[0] && c[0].phone === ph, jobs: js.length, stage: js[0] && js[0].stage, quotes: js[0] ? quotesOf(js[0].id).length : 0, view: S.view }; }, [QN, QPH]);
+  ok('QQ1: new customer + job + quote, opened in editor', qq1.cust === 1 && qq1.phone && qq1.jobs === 1 && qq1.stage === 'quote' && qq1.quotes === 1 && qq1.view === 'quote', JSON.stringify(qq1));
+  await settle(p);
+  await p.click('#tabs [data-tab="work"]'); await p.click('#plus'); await p.click('[data-new="quote"]'); await p.fill('#qq-q', QN);
+  ok('QQ2: existing customer suggested', (await p.locator('#qq-list .row[data-qq-pick]').count()) === 1);
+  await p.click('#qq-list .row[data-qq-pick]'); await p.click('#qq-go'); await p.waitForSelector('#v-quote:not([hidden])', { timeout: 20000 });
+  const qq2 = await p.evaluate((n) => { const c = live(D.customers).filter((x) => x.name === n); return { cust: c.length, jobs: c[0] ? jobsOf(c[0].id).length : 0 }; }, QN);
+  ok('QQ2: same customer, second job, no duplicate customer', qq2.cust === 1 && qq2.jobs === 2, JSON.stringify(qq2));
+  await settle(p);
+  ok('QQ3: rows reached cloud', await p.evaluate(async (n) => { const { data } = await sb.from('customers').select('id').eq('name', n); return (data || []).length === 1; }, QN));
+
   await ctx.close(); await b.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.log('CRASH', e); process.exit(2); });

@@ -621,7 +621,7 @@ $('#photo-in').addEventListener('change', async (e) => {
   render(); toast(navigator.onLine ? 'התמונות נשמרו' : 'נשמרו במכשיר — יעלו כשתהיה רשת');
 });
 $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') e.currentTarget.hidden = true; });
-$('#search').addEventListener('input', (e) => { S.q = e.target.value; if (!['customers', 'work'].includes(S.view)) { S.stack = []; S.view = 'customers'; } render(); });   // הקלדה מכל מקום = חיפוש לקוחות
+$('#search').addEventListener('input', (e) => { S.q = e.target.value; if (S.view !== 'customers') { S.stack = []; S.view = 'customers'; } render(); });   // הקלדה מכל מקום = חיפוש בכל הלקוחות (גם מ"לקוחות" שמסנן רק עבודות פתוחות — אחרת לקוח שסיים לא נמצא; 18.10)
 $('#li-go').addEventListener('click', login);
 $('#li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
 async function login() {
@@ -642,7 +642,7 @@ async function boot() {
   const sp = new URLSearchParams(location.search); const shared = [sp.get('title'), sp.get('text'), sp.get('url')].filter(Boolean).join('\n');   // "שתף" מוואטסאפ → פנייה חדשה (Web Share Target)
   if (sp.has('text') || sp.has('title')) { try { history.replaceState({ ob2: 0 }, '', location.pathname); } catch (e) {} }
   try { await DB.loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
-  await loadDigests(); render();
+  await loadDigests(); if (unseenDigest() && ['work', 'more'].includes(S.view) && !$('#sheet-wrap')) render();   // רק כשיש מה להראות — ציור-מחדש סוגר קבוצות שאור בדיוק פתח
   if (shared) openLeadForm(shared); else if (unseenDigest() && !$('#sheet-wrap')) openDigest(unseenDigest());
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
