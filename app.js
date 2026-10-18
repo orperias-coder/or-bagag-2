@@ -1,6 +1,6 @@
 /* אור בגג 2 — שלב א': התחברות, לקוחות, כרטיס לקוח, עבודה והצעה (צפייה).
    הענן (Supabase, סכימת app2) הוא האמת. עותק לקריאה נשמר בדפדפן כדי שהמסך ייפתח מיד גם בלי רשת. */
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const SB_URL = 'https://wxnmujdcrqsgokzlptkh.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
 const sb = supabase.createClient(SB_URL, SB_ANON, { db: { schema: 'app2' }, auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ob2_auth' } });
@@ -16,7 +16,7 @@ const daysSince = (t) => t ? Math.floor((Date.now() - new Date(t).getTime()) / 8
 function toast(m, ms) { const e = $('#toast'); e.textContent = m; e.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => e.hidden = true, ms || 2500); }
 
 // ---------- נתונים: זיכרון + עותק בדפדפן ----------
-const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], expenses: [], settings: null, uid: null, loadedAt: 0, digests: [], waLeads: null, waAt: 0 };
+const D = { customers: [], jobs: [], quotes: [], quote_versions: [], payments: [], media: [], alerts: [], tasks: [], findings: [], expenses: [], settings: null, uid: null, loadedAt: 0, digests: [], waLeads: null, waAt: 0, scanReq: null };
 const CACHE_KEY = 'ob2_cache_v1';
 function cacheSave() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...D, media: D.media.map((m) => ({ ...m, thumb_data: null })) })); } catch (e) {} }
 function cacheLoad() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.customers) Object.assign(D, c); } catch (e) {} }
@@ -558,13 +558,42 @@ function renderLeads() {
   const fresh = all.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   let body = '';
   body = lists[tab].length ? waByDay(lists[tab]) : '';
-  v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="wa-head"><b>לידים מוואטסאפ</b><span class="dim">${fresh ? 'נסרק ' + digestWhen({ scanned_at: fresh }) : ''}</span></div>
+  v.innerHTML = `<button class="back" data-back>‹ חזרה</button><div class="wa-head"><b>לידים מוואטסאפ</b><span class="dim">${fresh ? 'נסרק ' + digestWhen({ scanned_at: fresh }) : ''}</span></div>${scanBarHTML()}
   <div class="dg-filter">${[['leads', 'לידים', lists.leads.length], ['work', 'ביצוע וגבייה', lists.work.length], ['closed', 'טופלו', lists.closed.length]].map(([k, he, n]) => `<button data-wa-tab="${k}" class="${tab === k ? 'on' : ''}">${he} · ${n}</button>`).join('')}</div>${body || '<div class="empty">אין כאן כלום</div>'}`;
 }
 document.addEventListener('toggle', (e) => { const d = e.target; if (!d.matches || !d.matches('details[data-wa-old]')) return; S.waOldOpen = d.open; if (!d.open) return; const L = d.querySelector('.list'); if (L.childElementCount) return;
   const tab = S.params.tab || 'leads', cut = Date.now() / 1000 - WA_RECENT_DAYS * 86400, isJob = (l) => !!(l.data && l.data.band);
   const arr = (D.waLeads || []).filter((l) => (tab === 'closed' ? waClosed(l) : !waClosed(l) && (tab === 'leads' ? isJob(l) : !isJob(l))) && ((l.data && l.data.first_seen) || 0) < cut).sort((a, b) => ((b.data && b.data.first_seen) || 0) - ((a.data && a.data.first_seen) || 0));
   L.innerHTML = arr.map(waRow).join(''); }, true);
+// ---------- "סרוק עכשיו" (19.10, אור: "רענון לכלי הוואטסאפ ישירות מהאפליקציה") ----------
+// בקשה בענן (app2.scan_requests) → השרת במק בודק כל 20 שניות ומריץ סריקה → התוצאה חוזרת לכאן. לא יותר מפעם ב-10 דקות.
+const SCAN_GAP_MIN = 10;
+async function loadScanReq() { try { const { data } = await sb.from('scan_requests').select('*').order('requested_at', { ascending: false }).limit(1); D.scanReq = (data && data[0]) || null; } catch (e) { console.warn(e); } }
+const minsAgo = (t) => Math.floor((Date.now() - new Date(t)) / 60000);
+function scanBarHTML() {
+  const r = D.scanReq, busy = r && ['pending', 'running'].includes(r.status);
+  let line = '';
+  if (r && r.status === 'pending') line = minsAgo(r.requested_at) >= 2 ? 'המחשב עוד לא לקח את הבקשה. כנראה הוא כבוי או במצב שינה — הסריקה תרוץ כשיתעורר.' : 'הבקשה נשלחה. מחכה שהמחשב ייקח אותה (עד חצי דקה)…';
+  else if (r && r.status === 'running') line = 'סורק במחשב מאז ' + timeHe(r.started_at) + '. לוקח בדרך כלל 2-10 דקות.';
+  else if (r && r.status === 'done') line = 'הסריקה הסתיימה ב-' + timeHe(r.finished_at) + (r.message ? ': ' + esc(r.message) : '');
+  else if (r && r.status === 'failed') line = 'הסריקה נכשלה' + (r.message ? ': ' + esc(r.message) : '') + '. אפשר לנסות שוב.';
+  return `<div class="scan-bar"><button class="btn sm ${busy ? 'ghost' : 'pri'}" data-act="scan-now"${busy ? ' disabled' : ''}>${busy ? 'סורק…' : 'סרוק עכשיו'}</button>${line ? `<span class="dim">${line}</span>` : ''}</div>`;
+}
+async function requestScan() {
+  await loadScanReq(); const r = D.scanReq;
+  if (r && ['pending', 'running'].includes(r.status)) { render(); return toast('כבר יש סריקה בדרך'); }
+  const last = r && (r.finished_at || r.requested_at);
+  if (last && minsAgo(last) < SCAN_GAP_MIN) return toast('הסריקה האחרונה הייתה לפני ' + minsAgo(last) + ' דקות. אפשר שוב בעוד ' + (SCAN_GAP_MIN - minsAgo(last)) + '.');
+  const { data, error } = await sb.from('scan_requests').insert({}).select().single();
+  if (error) return toast('לא הצלחתי לשלוח — בדוק רשת');
+  D.scanReq = data; render(); toast('נשלח למחשב');
+}
+setInterval(async () => {   // מעקב אחרי סריקה פעילה; כשהיא נגמרת — מרעננים לידים וסיכום
+  const r = D.scanReq; if (document.hidden || !r || !['pending', 'running'].includes(r.status)) return;
+  await loadScanReq(); const n = D.scanReq;
+  if (n && ['done', 'failed'].includes(n.status)) { await Promise.all([loadWaLeads(true), loadDigests()]); if (n.status === 'done' && unseenDigest() && !$('#sheet-wrap')) openDigest(unseenDigest()); }
+  if (['leads', 'lead', 'work', 'more'].includes(S.view) && !$('#sheet-wrap')) render();
+}, 8000);
 async function renderLead() {
   const v = $('#v-lead'); v.hidden = false; const l = (D.waLeads || []).find((x) => x.jid === S.params.jid);
   if (!l) { v.innerHTML = '<button class="back" data-back>‹ חזרה</button><div class="empty">הליד לא נמצא</div>'; return; }
@@ -683,11 +712,12 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.open === 'trash') show('trash');
   else if (t.dataset.act === 'digest') { const d = D.digests.find((y) => y.id === t.dataset.id); if (d) openDigest(d); }
   else if (t.dataset.open === 'digests') openDigestList();
-  else if (t.dataset.open === 'leads') { closeSheet(); show('leads', { tab: 'leads' }); }
+  else if (t.dataset.open === 'leads') { closeSheet(); loadScanReq(); show('leads', { tab: 'leads' }); }
   else if (t.dataset.wa) { await loadWaLeads(); show('lead', { jid: t.dataset.wa }); }
   else if (t.dataset.waTab) { S.params = { tab: t.dataset.waTab }; render(); }
   else if (t.dataset.waSt) setWaStatus(S.params.jid, t.dataset.waSt);
   else if (t.dataset.waMedia !== undefined) openWaMedia(S.params.jid, Number(t.dataset.waMedia));
+  else if (t.dataset.act === 'scan-now') { if (t.disabled) return; t.disabled = true; try { await requestScan(); } finally { t.disabled = false; } }
   else if (t.dataset.act === 'wa-to-cust') { if (t.disabled) return; t.disabled = true; try { await waToCustomer(S.params.jid); } finally { t.disabled = false; } }
   else if (t.dataset.open === 'settings') show('settings');
   else if (t.dataset.open === 'catalog') show('catalog', { q: '' });
@@ -731,7 +761,7 @@ async function boot() {
   const sp = new URLSearchParams(location.search); const shared = [sp.get('title'), sp.get('text'), sp.get('url')].filter(Boolean).join('\n');   // "שתף" מוואטסאפ → פנייה חדשה (Web Share Target)
   if (sp.has('text') || sp.has('title')) { try { history.replaceState({ ob2: 0 }, '', location.pathname); } catch (e) {} }
   try { await DB.loadAll(); render(); } catch (e) { console.warn(e); toast(navigator.onLine ? 'לא הצלחתי לטעון מהענן' : 'אין רשת — מציג את העותק האחרון'); }
-  await loadDigests(); if (unseenDigest() && ['work', 'more'].includes(S.view) && !$('#sheet-wrap')) render();   // רק כשיש מה להראות — ציור-מחדש סוגר קבוצות שאור בדיוק פתח
+  await Promise.all([loadDigests(), loadScanReq()]); if (unseenDigest() && ['work', 'more'].includes(S.view) && !$('#sheet-wrap')) render();   // רק כשיש מה להראות — ציור-מחדש סוגר קבוצות שאור בדיוק פתח
   if (shared) openLeadForm(shared); else if (unseenDigest() && !$('#sheet-wrap')) openDigest(unseenDigest());
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
