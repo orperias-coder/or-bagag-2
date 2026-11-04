@@ -76,18 +76,22 @@ function buildAgenda() {
   out.forEach((a) => { a.done = !!st[a.id]; });
   return out;
 }
-let AG = [];
+let AG = [], SHOWN = [], agFilter = null;
 const CHK = '<svg viewBox="0 0 12 12"><path d="M2 6.5l2.6 2.5L10 3.5"/></svg>';
 function renderAgenda() {
   AG = buildAgenda();
   const open = AG.filter((a) => !a.done && (a.u !== 'later' || AG.filter((x) => x.u === 'later' && !x.done).indexOf(a) < LATER_MAX)), shown = new Set([...open.slice(0, AG_MAX), ...AG.filter((a) => a.done)].map((a) => a.id)), hiddenN = AG.filter((a) => !a.done).length - Math.min(open.length, AG_MAX);
+  if (agFilter) AG.filter((a) => a.sec === agFilter).forEach((a) => shown.add(a.id));   // בסינון — כל השורות של התחום, בלי התקרה
+  const pass = (a) => !agFilter || a.sec === agFilter;
+  SHOWN = URG.flatMap((g) => AG.filter((a) => a.u === g.id && shown.has(a.id) && pass(a)));
+  renderChips();
   $('#agenda').innerHTML = URG.map((g) => {
-    const its = AG.filter((a) => a.u === g.id && shown.has(a.id)); if (!its.length) return '';
-    return `<div class="agroup"><h3><i style="--u:${g.u}"></i>${g.name}</h3>${its.map((a, i) => `<div class="ai lift ${a.done ? 'done' : ''}" data-ag="${esc(a.id)}" style="--pc:${PC[a.sec]};--i:${i}" role="button" tabindex="0" aria-label="${esc(a.t)}, לעבור ל${SEC[a.sec]}">
+    const its = AG.filter((a) => a.u === g.id && shown.has(a.id) && pass(a)); if (!its.length) return '';
+    return `<div class="agroup"><h3><i style="--u:${g.u}"></i>${g.name}</h3>${its.map((a, i) => `<div class="ai lift ${a.done ? 'done' : ''} ${CUR && CUR.id === a.id ? 'sel' : ''}" data-ag="${esc(a.id)}" style="--pc:${PC[a.sec]};--i:${i}" role="button" tabindex="0" aria-label="${esc(a.t)}, לפתוח פרטים">
       <button class="chk" type="button" data-agchk="${esc(a.id)}" aria-pressed="${a.done}" aria-label="סימון וי">${CHK}</button>
       <div class="tt"><span class="tx">${esc(a.t)}</span><small>${esc(a.y)}</small></div><span class="chip">${SEC[a.sec]}</span>
       <svg class="arr" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg></div>`).join('')}</div>`;
-  }).join('') + (hiddenN ? `<div class="allset" style="color:var(--muted);font-weight:500">ועוד ${hiddenN} בחלונות למטה</div>` : '')
+  }).join('') + (hiddenN && !agFilter ? `<div class="allset" style="color:var(--muted);font-weight:500">ועוד ${hiddenN} בחלונות למטה</div>` : '')
     + (!AG.length ? '<div class="allset">אין כרגע שום דבר שמחכה לך.</div>' : AG.every((a) => a.done) ? '<div class="allset">הכל מסומן. כל הכבוד.</div>' : '');
 }
 async function tickAgenda(a) {
@@ -109,12 +113,95 @@ $('#agenda').addEventListener('click', (e) => {
   if (ck) {
     e.stopPropagation(); const a = AG.find((x) => x.id === ck.dataset.agchk); if (!a) return;
     const row = ck.closest('.ai'); row.classList.toggle('done', !a.done); ck.setAttribute('aria-pressed', String(!a.done));
-    const was = a.done;
-    tickAgenda(a).then(() => { if (!was) toast('סומן וי: ' + a.t + (a.kind === 'lead' ? ' (עבר ל"חזרנו אליהם")' : ''), () => { const b = AG.find((x) => x.id === a.id); if (b) tickAgenda(b); }); });
+    tickWithToast(a);
     return;
   }
-  const row = e.target.closest('[data-ag]'); if (row) jump(AG.find((x) => x.id === row.dataset.ag));
+  const row = e.target.closest('[data-ag]'); if (row) openSheet(AG.find((x) => x.id === row.dataset.ag));
 });
+function tickWithToast(a) {
+  const was = a.done;
+  return tickAgenda(a).then(() => { if (!was) toast('סומן וי: ' + a.t + (a.kind === 'lead' ? ' (עבר ל"חזרנו אליהם")' : ''), () => { const b = AG.find((x) => x.id === a.id); if (b) tickAgenda(b); }); });
+}
+
+/* ---------- עיגולי סינון ---------- */
+function renderChips() {
+  const open = AG.filter((a) => !a.done);
+  $('#fchips').innerHTML = Object.keys(SEC).map((sec) => {
+    const n = open.filter((a) => a.sec === sec).length;
+    return `<button type="button" class="fchip" data-f="${sec}" style="--c:${PC[sec]}" aria-pressed="${agFilter === sec}"><i></i>${SEC[sec]} <b>${n}</b></button>`;
+  }).join('');
+}
+$('#fchips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-f]'); if (!b) return;
+  agFilter = agFilter === b.dataset.f ? null : b.dataset.f; $('#app').classList.remove('boot'); renderAgenda();
+});
+
+/* ---------- חלונית פרטים (04.11): לוחצים על שורה — הפרטים נפתחים לידה, בלי לזוז במסך ---------- */
+let CUR = null;
+const KIND = { 'p-leads': 'ליד מוואטסאפ', 'p-tasks': 'משימה', 'p-cal': 'ביקור' };
+function sheetBody(a) {
+  const rows = [], extra = [];
+  let main = a.done ? 'לבטל את הווי' : a.kind === 'lead' ? 'חזרתי אליו ✓' : a.sec === 'p-tasks' ? 'בוצע ✓' : a.sec === 'p-cal' ? 'הביקור בוצע ✓' : 'בדקתי ✓';
+  if (a.sec === 'p-leads') {
+    const l = D.leads.find((x) => 'L' + x.jid === a.k);
+    if (l) {
+      const area = l.data && (l.data.address || l.data.area);
+      rows.push(['שם', leadName(l)]); if (l.phone) rows.push(['טלפון', fmtPhone(l.phone)]); if (area) rows.push(['איפה', area]);
+      if (l.data && l.data.band_he) rows.push(['סוג', l.data.band_he]);
+      const st = STAGES.find((x) => x.id === l.status); rows.push(['שלב', st ? st.name : l.status]);
+      if (ts(l)) rows.push(['פעילות אחרונה', ago(ts(l))]);
+      const msgs = ((l.data && l.data.messages) || []).slice(-4);
+      if (l.summary && l.summary.replace(/\s+/g, ' ').trim().length > 69) extra.push(`<p class="meta" style="color:var(--ink)">${esc(l.summary)}</p>`);   // רק כשהשורה למעלה קוצרה
+      if (msgs.length) extra.push(`<div class="chat">${msgs.map((m) => `<div class="b ${m.me ? 'me' : ''}">${esc(short(m.text, 260))}</div>`).join('')}</div>`);
+      const href = waHref(l.phone); if (href) extra.push(`<a class="btn link" target="_blank" rel="noopener" href="${href}" data-s="wa">לפתוח בוואטסאפ</a>`);
+    }
+  } else if (a.sec === 'p-tasks') {
+    const t = D.tasks.find((x) => 'T' + x.id === a.k);
+    if (t) { rows.push(['עד', t.due ? t.due.split('-').reverse().join('.') : 'בלי תאריך']); if (t.created_at) rows.push(['נוצרה', new Date(t.created_at).toLocaleDateString('he-IL')]); }
+  } else if (a.sec === 'p-cal') {
+    const j = D.jobs.find((x) => 'V' + x.id === a.k), c = j && custOf(j.customer_id);
+    if (j) { rows.push(['שעה', hm(j.visit_at)]); if (c && c.address) rows.push(['כתובת', c.address]); if (c && c.phone) rows.push(['טלפון', fmtPhone(c.phone)]); if (j.problem) rows.push(['מה הבעיה', short(j.problem, 300)]); }
+  }
+  return { rows, extra, main };
+}
+function openSheet(a) {
+  if (!a) return; CUR = a;
+  const sh = $('#sheet'), { rows, extra, main } = sheetBody(a), ix = SHOWN.findIndex((x) => x.id === a.id);
+  sh.style.setProperty('--pc', PC[a.sec]);
+  sh.innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button>
+    <span class="kind">${KIND[a.sec] || SEC[a.sec]}</span><h2 id="shT">${esc(a.t)}</h2><p class="meta">${esc(a.y)}</p>
+    ${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}${extra.join('')}
+    <div class="sacts"><button class="btn main" type="button" data-s="tick">${main}</button><button class="btn" type="button" data-s="show">להראות בלוח</button></div>
+    <div class="snav"><button type="button" data-s="prev" ${ix <= 0 ? 'disabled' : ''}>→ הקודם</button><span class="meta">${ix + 1} מתוך ${SHOWN.length}</span><button type="button" data-s="next" ${ix < 0 || ix >= SHOWN.length - 1 ? 'disabled' : ''}>הבא ←</button></div>`;
+  sh.hidden = false; requestAnimationFrame(() => { sh.classList.add('on'); $('#scrim').classList.add('on'); });
+  $$('#agenda .ai').forEach((r) => r.classList.toggle('sel', r.dataset.ag === a.id));
+  sh.querySelector('[data-s="tick"]').focus({ preventScroll: true });
+}
+function closeSheet() {
+  const sh = $('#sheet'); sh.classList.remove('on'); $('#scrim').classList.remove('on'); CUR = null;
+  $$('#agenda .ai.sel').forEach((r) => r.classList.remove('sel'));
+  setTimeout(() => { if (!sh.classList.contains('on')) sh.hidden = true; }, 450);
+}
+$('#scrim').onclick = closeSheet;
+$('#sheet').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-s]'); if (!b || !CUR) return; const a = CUR, ix = SHOWN.findIndex((x) => x.id === a.id);
+  if (b.dataset.s === 'close') closeSheet();
+  if (b.dataset.s === 'prev' && SHOWN[ix - 1]) openSheet(SHOWN[ix - 1]);
+  if (b.dataset.s === 'next' && SHOWN[ix + 1]) openSheet(SHOWN[ix + 1]);
+  if (b.dataset.s === 'show') { closeSheet(); jump(a); }
+  if (b.dataset.s === 'tick') {
+    // אחרי וי — ממשיכים לבא בתור (אם יש), כדי לעבור על הרשימה בלי לסגור
+    const nextId = !a.done && SHOWN.slice(ix + 1).find((x) => !x.done);
+    tickWithToast(a).then(() => { const n = nextId && AG.find((x) => x.id === nextId.id); if (n) openSheet(n); else closeSheet(); });
+  }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CUR) closeSheet(); });
+(() => {   // בטלפון: גרירה למטה סוגרת
+  let y0 = null; const sh = $('#sheet');
+  sh.addEventListener('touchstart', (e) => { if (sh.scrollTop <= 0 && innerWidth <= 860) y0 = e.touches[0].clientY; }, { passive: true });
+  sh.addEventListener('touchmove', (e) => { if (y0 == null) return; const dy = e.touches[0].clientY - y0; if (dy > 0) sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  sh.addEventListener('touchend', (e) => { if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; sh.style.transform = ''; y0 = null; if (dy > 90) closeSheet(); });
+})();
 $('#agenda').addEventListener('keydown', (e) => { const row = e.target.closest && e.target.closest('[data-ag]'); if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); row.click(); } });
 
 /* קפיצה לחלון: גלילה, ניעור קטן, החלונות האחרים מתעמעמים לרגע, והפריט עצמו מודגש */
