@@ -141,7 +141,8 @@ let CUR = null;
 const KIND = { 'p-leads': 'ליד מוואטסאפ', 'p-tasks': 'משימה', 'p-cal': 'ביקור' };
 function sheetBody(a) {
   const rows = [], extra = [];
-  let main = a.done ? 'לבטל את הווי' : a.kind === 'lead' ? 'חזרתי אליו ✓' : a.sec === 'p-tasks' ? 'בוצע ✓' : a.sec === 'p-cal' ? 'הביקור בוצע ✓' : 'בדקתי ✓';
+  const li = a.kind === 'leadrow' ? STAGES.findIndex((x) => x.id === (D.leads.find((l) => l.jid === a.jid) || {}).status) : -1;
+  let main = a.kind === 'leadrow' ? (li >= 0 && li < 4 ? 'להעביר ל' + STAGES[li + 1].name : 'לסמן שטופל') : a.done ? 'לבטל את הווי' : a.kind === 'lead' ? 'חזרתי אליו ✓' : a.sec === 'p-tasks' ? 'בוצע ✓' : a.sec === 'p-cal' ? 'הביקור בוצע ✓' : 'בדקתי ✓';
   if (a.sec === 'p-leads') {
     const l = D.leads.find((x) => 'L' + x.jid === a.k);
     if (l) {
@@ -164,30 +165,38 @@ function sheetBody(a) {
   }
   return { rows, extra, main };
 }
-function openSheet(a) {
-  if (!a) return; CUR = a;
-  const sh = $('#sheet'), { rows, extra, main } = sheetBody(a), ix = SHOWN.findIndex((x) => x.id === a.id);
+let SL = [];   // הרשימה שהחלונית עוברת עליה (רשימת היום או שלב-לידים)
+function openSheet(a, list) {
+  if (!a) return; CUR = a; SL = list || (a.kind === 'leadrow' ? LROWS : SHOWN);
+  const sh = $('#sheet'), { rows, extra, main } = sheetBody(a), ix = SL.findIndex((x) => x.id === a.id), lr = a.kind === 'leadrow';
   sh.style.setProperty('--pc', PC[a.sec]);
   sh.innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button>
     <span class="kind">${KIND[a.sec] || SEC[a.sec]}</span><h2 id="shT">${esc(a.t)}</h2><p class="meta">${esc(a.y)}</p>
     ${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}${extra.join('')}
-    <div class="sacts"><button class="btn main" type="button" data-s="tick">${main}</button><button class="btn" type="button" data-s="show">להראות בלוח</button></div>
-    <div class="snav"><button type="button" data-s="prev" ${ix <= 0 ? 'disabled' : ''}>→ הקודם</button><span class="meta">${ix + 1} מתוך ${SHOWN.length}</span><button type="button" data-s="next" ${ix < 0 || ix >= SHOWN.length - 1 ? 'disabled' : ''}>הבא ←</button></div>`;
+    <div class="sacts"><button class="btn main" type="button" data-s="tick">${main}</button>${lr ? '<button class="btn ghost" type="button" data-s="skip">לא רלוונטי</button>' : '<button class="btn" type="button" data-s="show">להראות בלוח</button>'}</div>
+    <div class="snav"><button type="button" data-s="prev" ${ix <= 0 ? 'disabled' : ''}>→ הקודם</button><span class="meta">${ix + 1} מתוך ${SL.length}</span><button type="button" data-s="next" ${ix < 0 || ix >= SL.length - 1 ? 'disabled' : ''}>הבא ←</button></div>`;
   sh.hidden = false; requestAnimationFrame(() => { sh.classList.add('on'); $('#scrim').classList.add('on'); });
   $$('#agenda .ai').forEach((r) => r.classList.toggle('sel', r.dataset.ag === a.id));
+  $$('#board .lr').forEach((r) => r.classList.toggle('sel', 'B' + r.dataset.lr === a.id));
   sh.querySelector('[data-s="tick"]').focus({ preventScroll: true });
 }
 function closeSheet() {
   const sh = $('#sheet'); sh.classList.remove('on'); $('#scrim').classList.remove('on'); CUR = null;
-  $$('#agenda .ai.sel').forEach((r) => r.classList.remove('sel'));
+  $$('#agenda .ai.sel,#board .lr.sel').forEach((r) => r.classList.remove('sel'));
   setTimeout(() => { if (!sh.classList.contains('on')) sh.hidden = true; }, 450);
 }
 $('#scrim').onclick = closeSheet;
 $('#sheet').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-s]'); if (!b || !CUR) return; const a = CUR, ix = SHOWN.findIndex((x) => x.id === a.id);
+  const b = e.target.closest('[data-s]'); if (!b || !CUR) return; const a = CUR, L = SL, ix = L.findIndex((x) => x.id === a.id);
   if (b.dataset.s === 'close') closeSheet();
-  if (b.dataset.s === 'prev' && SHOWN[ix - 1]) openSheet(SHOWN[ix - 1]);
-  if (b.dataset.s === 'next' && SHOWN[ix + 1]) openSheet(SHOWN[ix + 1]);
+  if (b.dataset.s === 'prev' && L[ix - 1]) openSheet(L[ix - 1], L);
+  if (b.dataset.s === 'next' && L[ix + 1]) openSheet(L[ix + 1], L);
+  if (a.kind === 'leadrow' && (b.dataset.s === 'tick' || b.dataset.s === 'skip')) {
+    // הליד יוצא מהשלב — ממשיכים לבא אחריו באותו שלב
+    const nx = L[ix + 1] || L[ix - 1];
+    moveLead(a.jid, b.dataset.s === 'skip').then(() => { const n = nx && LROWS.find((x) => x.id === nx.id); if (n) openSheet(n, LROWS); else closeSheet(); });
+    return;
+  }
   if (b.dataset.s === 'show') { closeSheet(); jump(a); }
   if (b.dataset.s === 'tick') {
     // אחרי וי — ממשיכים לבא בתור (אם יש), כדי לעבור על הרשימה בלי לסגור
@@ -218,11 +227,12 @@ function jump(a) {
     spotT = setTimeout(() => { grid.classList.remove('spot'); p.classList.remove('hit'); }, 1700);
     if (a.sec === 'p-tasks') { const t = D.tasks.find((x) => 'T' + x.id === a.k); const d = t && t.due === TOM() ? 'tom' : 'today'; if (d !== taskDay) $('#taskDay [data-d="' + d + '"]').click(); }
     if (a.sec === 'p-cal' && calDay !== 'today') $('#calDay [data-d="today"]').click();
+    if (a.sec === 'p-leads') { const l = D.leads.find((x) => 'L' + x.jid === a.k); if (l && STAGES.some((x) => x.id === l.status)) { leadTab = l.status; leadMore = true; renderLeads(); } }
     const el = a.k && [...p.querySelectorAll('[data-k]')].find((x) => x.dataset.k === a.k);
     if (el) {
       el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
       el.classList.remove('target'); void el.offsetWidth; el.classList.add('target'); setTimeout(() => el.classList.remove('target'), 2000);
-      if (el.dataset.lead && !el.classList.contains('open')) setTimeout(() => toggleOpen(el), 500);
+      if (el.dataset.lr) setTimeout(() => openSheet(LROWS.find((x) => x.jid === el.dataset.lr), LROWS), 500);
       el.focus({ preventScroll: true });
     }
   };
@@ -284,43 +294,54 @@ async function setTaskDone(id, done, quiet) {
 }
 
 /* ---------- חלון לידים ---------- */
+let leadTab = null, leadMore = false, LROWS = [];
+const LEAD_MAX = 8;
+function leadRow(l) {
+  const area = l.data && (l.data.address || l.data.area);
+  return { id: 'B' + l.jid, kind: 'leadrow', sec: 'p-leads', jid: l.jid, k: 'L' + l.jid, t: leadName(l) + (area ? ', ' + area : ''), y: l.summary || '' };
+}
 function renderLeads() {
-  const list = D.leads.filter(onBoard);
-  $('#bar').innerHTML = STAGES.map((s) => `<i style="--c:${s.c};flex-grow:${list.filter((l) => l.status === s.id).length || .2}"></i>`).join('');
-  $('#board').innerHTML = STAGES.map((s, si) => {
-    const items = list.filter((l) => l.status === s.id).sort((a, b) => ts(b) - ts(a));
-    return `<div class="tray" style="--c:${s.c}"><div class="tray-h"><span class="dot ${s.id === 'new' && items.length ? 'pulse' : ''}"></span><h3>${s.name}</h3><span class="n" id="ln-${s.id}">${items.length}</span></div><p class="hint">${s.hint}</p>
-    <div class="list">${items.map((l, i) => {
-      const msgs = ((l.data && l.data.messages) || []).slice(-3), href = waHref(l.phone), area = l.data && (l.data.address || l.data.area);
-      return `<article class="card lift" tabindex="0" data-k="L${esc(l.jid)}" data-lead="${esc(l.jid)}" style="--i:${Math.min(si * 2 + i, 12)}" aria-expanded="false">
-      <div class="top"><span class="name">${esc(leadName(l))}${area ? ', ' + esc(area) : ''}</span></div>
-      <div class="need">${esc(l.summary || '')}</div><div class="meta"><span class="${awaitingLong(l) ? 'late' : ''}">${l.data && l.data.awaiting && l.status === 'new' ? 'מחכה לנו · ' : ''}${ago(ts(l))}</span>${l.data && l.data.band_he ? `<span>${esc(l.data.band_he)}</span>` : ''}</div>
-      <div class="more"><div>${msgs.length ? `<div class="chat">${msgs.map((m) => `<div class="b ${m.me ? 'me' : ''}">${esc(short(m.text, 220))}</div>`).join('')}</div>` : ''}
-      <div class="acts"><button class="btn go" type="button" data-go="${esc(l.jid)}">${si < 4 ? 'להעביר ל' + STAGES[si + 1].name : 'לסמן שטופל'}</button>${href ? `<a class="btn link" target="_blank" rel="noopener" href="${href}">לפתוח בוואטסאפ</a>` : ''}<button class="btn ghost" type="button" data-skip="${esc(l.jid)}">לא רלוונטי</button></div></div></div></article>`;
-    }).join('') || '<div class="empty">אין כאן אף אחד</div>'}</div></div>`;
-  }).join('');
-  const nw = list.filter((l) => l.status === 'new').length, wt = list.filter((l) => l.status === 'new' && l.data.awaiting).length;
+  const list = D.leads.filter(onBoard), by = (id) => list.filter((l) => l.status === id).sort((a, b) => ts(b) - ts(a));
+  if (!leadTab || !STAGES.some((s) => s.id === leadTab)) leadTab = (STAGES.find((s) => by(s.id).length) || STAGES[0]).id;
+  $('#bar').innerHTML = STAGES.map((s) => `<i style="--c:${s.c};flex-grow:${by(s.id).length || .2}"></i>`).join('');
+  $('#ltabs').innerHTML = STAGES.map((s) => `<button type="button" class="ltab" role="tab" data-lt="${s.id}" style="--c:${s.c}" aria-selected="${s.id === leadTab}"><i class="${s.id === 'new' && by(s.id).length ? 'pulse' : ''}"></i>${s.name} <b id="ln-${s.id}">${by(s.id).length}</b></button>`).join('');
+  const st = STAGES.find((s) => s.id === leadTab), items = by(leadTab), cut = leadMore ? items : items.slice(0, LEAD_MAX);
+  LROWS = items.map(leadRow);
+  $('#board').style.setProperty('--c', st.c);
+  $('#board').innerHTML = cut.map((l, i) => {
+    const area = l.data && (l.data.address || l.data.area), w = l.status === 'new' && l.data && l.data.awaiting;
+    return `<div class="lr ${CUR && CUR.id === 'B' + l.jid ? 'sel' : ''}" data-k="L${esc(l.jid)}" data-lr="${esc(l.jid)}" role="button" tabindex="0" style="--i:${Math.min(i, 12)}" aria-label="${esc(leadName(l))}, לפתוח פרטים">
+      <span class="d ${w ? 'w' : ''}" title="${w ? 'מחכה לתשובה מאיתנו' : ''}"></span>
+      <div class="tt"><span class="nm">${esc(leadName(l))}${area ? ', ' + esc(area) : ''}</span><span class="sm">${esc(l.summary || '')}</span></div>
+      <span class="ag ${awaitingLong(l) ? 'late' : ''}">${ago(ts(l))}</span><svg class="arr" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg></div>`;
+  }).join('') + (items.length > cut.length ? `<button type="button" class="lmore" data-lmore>עוד ${items.length - cut.length}</button>` : '')
+    + (!items.length ? `<div class="empty">אין כאן אף אחד. ${st.hint}</div>` : '');
+  const nw = by('new').length, wt = list.filter((l) => l.status === 'new' && l.data.awaiting).length;
   $('#leadSum').innerHTML = `<b>${nw} חדשים</b>${wt ? `, מתוכם <b>${wt} מחכים לתשובה</b>` : ''}. מוצגים ${RECENT_DAYS} הימים האחרונים.`;
   const older = D.leads.filter((l) => isOpen(l) && isJob(l) && !onBoard(l)).length;
   $('#older').innerHTML = older ? `ועוד ${older} לידים ישנים יותר שאף אחד לא סימן. <a href="./">לכל הלידים באפליקציה</a>` : '';
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'סריקת וואטסאפ אחרונה: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 }
-$('#board').addEventListener('click', (e) => {
-  const go = e.target.closest('[data-go]'), sk = e.target.closest('[data-skip]');
-  if (go || sk) {
-    e.stopPropagation(); const jid = (go || sk).dataset[go ? 'go' : 'skip'], l = D.leads.find((x) => x.jid === jid); if (!l) return;
-    const from = l.status, i = STAGES.findIndex((x) => x.id === from), to = sk ? 'skip' : i < 4 ? STAGES[i + 1].id : 'done';
-    flip($('#board'), () => { setLeadStatus(jid, to).then((ok) => { if (!ok) flip($('#board'), renderAll); }); renderAll(); });
-    if (STAGES[i + 1] && !sk) bump('ln-' + to);
-    const label = sk ? ' סומן "לא רלוונטי"' : to === 'done' ? ' סומן שטופל' : ' עבר ל' + STAGES[i + 1].name;
-    toast(leadName(l) + label, () => flip($('#board'), () => { setLeadStatus(jid, from); renderAll(); }));
-    return;
-  }
-  if (e.target.closest('a')) return;
-  const c = e.target.closest('.card'); if (c && !e.target.closest('button')) toggleOpen(c);
+$('#ltabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lt]'); if (!b || b.dataset.lt === leadTab) return;
+  leadTab = b.dataset.lt; leadMore = false; $('#app').classList.remove('boot'); renderLeads();
 });
-document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('card') && e.target.dataset.lead) { e.preventDefault(); toggleOpen(e.target); } });
+// מעבר שלב / "לא רלוונטי" לליד — מהחלונית
+function moveLead(jid, skip) {
+  const l = D.leads.find((x) => x.jid === jid); if (!l) return Promise.resolve(false);
+  const from = l.status, i = STAGES.findIndex((x) => x.id === from), to = skip ? 'skip' : i < 4 ? STAGES[i + 1].id : 'done';
+  const p = setLeadStatus(jid, to).then((ok) => { if (!ok) renderAll(); return ok; }); renderAll();
+  if (STAGES[i + 1] && !skip) bump('ln-' + to);
+  const label = skip ? ' סומן "לא רלוונטי"' : to === 'done' ? ' סומן שטופל' : ' עבר ל' + STAGES[i + 1].name;
+  toast(leadName(l) + label, () => { setLeadStatus(jid, from); renderAll(); });
+  return p;
+}
+$('#board').addEventListener('click', (e) => {
+  if (e.target.closest('[data-lmore]')) { leadMore = true; renderLeads(); return; }
+  const r = e.target.closest('[data-lr]'); if (r) openSheet(LROWS.find((x) => x.jid === r.dataset.lr), LROWS);
+});
+$('#board').addEventListener('keydown', (e) => { const r = e.target.closest && e.target.closest('[data-lr]'); if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); } });
 
 /* ---------- חלון משימות ---------- */
 // משימות חופשיות לפי יום. סעיפי-ביצוע מהצעה שאושרה — שורה אחת לכל עבודה (מסומנים בתוך העבודה באפליקציה).
