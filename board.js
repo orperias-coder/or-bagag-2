@@ -61,7 +61,6 @@ const jobName = (j) => { const c = j && custOf(j.customer_id); return (c && c.na
 const callWho = (c) => cleanName((c.data && c.data.person) || c.contact || '') || fmtPhone(c.phone) || 'מספר לא ידוע';
 
 /* ---------- פניות (inbox): וואטסאפ + שיחות טלפון שעוד לא הפכו ללקוח ---------- */
-const INBOX_DAYS = 21;
 const isJob = (l) => !!(l.data && l.data.band);   // כמו "לידים" באפליקציה: הזדמנות לעבודה
 const leadOpen = (l) => !['done', 'skip'].includes(l.status);
 const recent = (t, days) => t && Date.now() - t < days * 864e5;
@@ -73,15 +72,16 @@ const callOpen = (c) => !c.handled_at && !c.customer_id && !c.deleted_at;
 function inboxItems() { return memo('inbox', inboxItems0); }
 function inboxItems0() {
   const out = [], byJid = {};
-  D.leads.filter((l) => isJob(l) && leadOpen(l) && !l.customer_id && ['new', 'replied'].includes(l.status) && (l.status === 'replied' || recent(ts(l), INBOX_DAYS))).forEach((l) => {
-    const it = { id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: [], tab: l.status === 'new' ? 'check' : 'replied', name: leadName(l), phone: leadPhone(l),
+  D.leads.filter((l) => isJob(l) && leadOpen(l) && !l.customer_id && ['new', 'replied'].includes(l.status)).forEach((l) => {
+    const it = liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: [], tab: l.status === 'new' ? 'check' : 'replied', name: leadName(l), phone: leadPhone(l),
       place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: ts(l), waiting: !!(l.data && l.data.awaiting && l.status === 'new'),
       // "דחוף" רק כשבאמת: ליד חם שמחכה לנו יותר מיממה (ביקורת 07.11: "דחוף על כל ליד = לא אומר כלום")
-      urgent: ['hot', 'to_close'].includes(l.data && l.data.band) && !!(l.data && l.data.awaiting) && l.status === 'new' && Date.now() - ts(l) > 864e5 };
+      urgent: ['hot', 'to_close'].includes(l.data && l.data.band) && !!(l.data && l.data.awaiting) && l.status === 'new' && Date.now() - ts(l) > 864e5 }, l, Math.max(ts(l), T(l.status_at)));
+    if (!it.live) return;   // שבוע בלי תזוזה → ארכיון
     byJid[l.jid] = it; out.push(it);
   });
   // שיחה של מי שיש לו פנייה בוואטסאפ מצטרפת אליה (כל סוג שיחה של לקוח/ליד); שיחת-ליד בלי וואטסאפ — פנייה משלה
-  D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && callOpen(c) && recent(callTime(c), INBOX_DAYS)).forEach((c) => {
+  D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && callOpen(c) && recent(callTime(c), LIVE_DAYS)).forEach((c) => {
     const host = c.wa_jid && byJid[c.wa_jid];
     if (!host && !callIsLead(c)) return;
     if (host) { host.calls.push(c); host.at = Math.max(host.at, callTime(c)); if (c.data && c.data.urgent) host.urgent = true; return; }
@@ -93,7 +93,20 @@ function inboxItems0() {
 const ITABS = [{ id: 'check', name: 'לבדוק', hint: 'פניות חדשות', c: '#2a9a63' }, { id: 'replied', name: 'מחכים ללקוח', hint: 'חזרנו אליהם, מחכים לתשובה מהם', c: '#6f9f3a' }];
 
 /* ---------- לקוחות בתהליך: עבודות באפליקציה + לידים מוואטסאפ שכבר התקדמו ---------- */
-const CUST_DAYS = 60;
+/* ---------- חיים של שבוע + ארכיון (אור אישר את המוקאפ 08.11): במסך הראשי רק מה שזז השבוע ---------- */
+const LIVE_DAYS = 7, QUOTE_DAYS = 14;   // מחכים להחלטה על הצעה — 14
+const liveDays = (tab) => (tab === 'quote' ? QUOTE_DAYS : LIVE_DAYS);
+// הועבר ידנית לארכיון — עד שיש תזוזה חדשה אחרי ההעברה (לקוח כתב שוב → חוזר לבד)
+const manualArch = (rec, at) => !!(rec && rec.archived_at) && at <= T(rec.archived_at);
+// עד מתי במסך הראשי: תזוזה אחרונה + 7 (הצעה: 14), או "להמשיך עוד שבוע" — המאוחר מביניהם
+const liveUntil = (rec, at, tab) => Math.max(at + liveDays(tab) * 864e5, T(rec && rec.keep_until));
+// touch = התזוזה האחרונה (הודעה, או פעולה של אור — "חזרתי אליו" נחשב); at נשאר לתצוגה ולמיון
+function liveMark(it, rec, touch) {
+  it.rec = rec; it.touch = touch == null ? it.at : touch; it.until = liveUntil(rec, it.touch, it.tab);
+  it.live = !manualArch(rec, it.touch) && it.until > Date.now();
+  it.cool = it.live && it.until - Date.now() < 864e5;   // יום לפני שיורד — "מתקררים"
+  return it;
+}
 const CSTAGES = [
   { id: 'sched', name: 'לתאם ביקור', hint: 'כרטיס נפתח, עוד אין מועד', c: '#2f8f98', jobs: ['lead'], wa: [] },
   { id: 'visit', name: 'ביקור נקבע', hint: 'לבוא ולמדוד', c: '#d39a1c', jobs: ['visit'], wa: ['visit'] },
@@ -107,12 +120,12 @@ function custItems0() {
   const out = [];
   D.jobs.filter((j) => !['paid', 'lost'].includes(j.stage)).forEach((j) => {
     const st = CSTAGES.find((s) => s.jobs.includes(j.stage)); if (!st) return; const c = custOf(j.customer_id);
-    out.push({ id: 'J' + j.id, src: 'job', job: j, cust: c, tab: st.id, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j), fresh: recent(jobTouch(j), CUST_DAYS) });
+    out.push(liveMark({ id: 'J' + j.id, src: 'job', job: j, cust: c, tab: st.id, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j) }, j));
   });
   const jobCust = new Set(D.jobs.map((j) => j.customer_id));
   D.leads.filter((l) => leadOpen(l) && isJob(l) && !(l.customer_id && jobCust.has(l.customer_id))).forEach((l) => {
     const st = CSTAGES.find((s) => s.wa.includes(l.status)); if (!st) return;
-    out.push({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)), fresh: recent(Math.max(ts(l), T(l.status_at)), CUST_DAYS) });
+    out.push(liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)) }, l));
   });
   return out.sort((a, b) => b.at - a.at);
 }
@@ -138,7 +151,7 @@ const MTABS = [{ id: 'inv', name: 'להוציא חשבונית', hint: 'שולם
 /* ---------- רשימת היום ---------- */
 const URG = [{ id: 'now', name: 'דחוף', u: '#e07a3a' }, { id: 'today', name: 'היום', u: '#4a78d0' }, { id: 'later', name: 'כשיש זמן', u: '#b5aec8' }];
 const SEC = { 'p-inbox': 'פניות', 'p-cust': 'לקוחות', 'p-calls': 'שיחות', 'p-tasks': 'משימות', 'p-cal': 'יומן', 'p-money': 'כסף' };
-const PC = { 'p-today': '#7b68d9', 'p-inbox': '#2a9a63', 'p-cust': '#2f8f98', 'p-calls': '#b0587d', 'p-tasks': '#4a78d0', 'p-cal': '#d39a1c', 'p-money': '#e07a3a' };
+const PC = { 'p-today': '#7b68d9', 'p-inbox': '#2a9a63', 'p-cust': '#2f8f98', 'p-calls': '#b0587d', 'p-tasks': '#4a78d0', 'p-cal': '#d39a1c', 'p-money': '#e07a3a', 'p-arch': '#5f86b8' };
 const AG_MAX = 15, LATER_MAX = 5;
 const DONE_KEY = () => 'ob2_board_done_' + TODAY() + '_' + (D.email || 'x');   // לכל אדם בנפרד (מכשיר משותף)
 function doneStore() { try { return JSON.parse(localStorage.getItem(DONE_KEY()) || '{}'); } catch (e) { return {}; } }
@@ -247,7 +260,7 @@ const SRC = {
 };
 const srcIc = (s) => `<span class="src" style="--sc:${SRC[s].c}" title="${SRC[s].he}"><svg viewBox="0 0 24 24">${SRC[s].svg}</svg></span>`;
 const ROWMAX = 8;
-const VIEW = { inbox: { tab: null, more: false }, cust: { tab: null, more: false }, calls: { tab: 'cust', more: false }, money: { tab: null, more: false } };
+const VIEW = { inbox: { tab: null, more: false }, cust: { tab: null, more: false }, calls: { tab: 'cust', more: false }, money: { tab: null, more: false }, arch: { r: 'all', q: '', more: false } };
 let LISTS = { inbox: [], cust: [], calls: [], money: [] };
 function rowHtml(it, extraRight) {
   const icons = it.src === 'wa' && it.calls && it.calls.length ? srcIc('wa') + srcIc('call') : srcIc(it.src);
@@ -263,29 +276,105 @@ function renderInbox() {
   const all = inboxItems(), v = VIEW.inbox, cnt = {}; all.forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
   if (!v.tab) v.tab = cnt.check ? 'check' : cnt.replied ? 'replied' : 'check';
   $('#itabs').style.setProperty('--nt', ITABS.length); $('#itabs').innerHTML = tabsHtml(ITABS, v.tab, cnt);
-  const items = all.filter((x) => x.tab === v.tab); items.forEach((x) => { x.late = x.src === 'wa' && awaitingLong(x.lead); });
+  $('#inboxCool').innerHTML = coolHtml(all);
+  const items = all.filter((x) => x.tab === v.tab && !(x.cool && x.src !== 'call')); items.forEach((x) => { x.late = x.src === 'wa' && awaitingLong(x.lead); });
   LISTS.inbox = items; const cut = v.more ? items : items.slice(0, ROWMAX), st = ITABS.find((s) => s.id === v.tab);
   $('#inbox').style.setProperty('--c', st.c);
   $('#inbox').innerHTML = cut.map((it) => rowHtml(it)).join('') + (items.length > cut.length ? `<button type="button" class="lmore" data-more="inbox">עוד ${items.length - cut.length}</button>` : '') + (!items.length ? `<div class="empty">אין כאן כלום. ${st.hint}.</div>` : '');
   const waiting = all.filter((x) => x.tab === 'check' && x.waiting).length, phone = all.filter((x) => x.calls && x.calls.length).length;
   $('#inboxSum').innerHTML = `<b>${cnt.check || 0} לבדוק</b>${waiting ? `, ${waiting} מחכים לתשובה` : ''}${phone ? ` · ${phone} עם שיחת טלפון` : ''}. לוחצים על פנייה כדי לטפל בה.`;
-  const older = D.leads.filter((l) => isJob(l) && leadOpen(l) && !l.customer_id && l.status === 'new' && !recent(ts(l), INBOX_DAYS)).length;
-  $('#inboxOlder').innerHTML = older ? `ועוד ${older} פניות ישנות מ-${INBOX_DAYS} יום שאף אחד לא סימן. <a href="./">לכל הלידים באפליקציה</a>` : '';
+  const older = archItems().filter((x) => x.src === 'wa' && x.why === 'cold' && !x.lead.customer_id && ['new', 'replied'].includes(x.lead.status)).length;
+  $('#inboxOlder').innerHTML = older ? `ועוד ${older} פניות שלא זזו שבוע — בארכיון. <button type="button" class="linkb" data-goarch>לארכיון</button>` : '';
 }
 function renderCust() {
-  const all = custItems(), fresh = all.filter((x) => x.fresh), v = VIEW.cust, cnt = {}; fresh.forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
+  const all = custItems(), fresh = all.filter((x) => x.live), v = VIEW.cust, cnt = {};
+  $('#custCool').innerHTML = coolHtml(fresh);
+  fresh.filter((x) => !x.cool).forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
   if (!v.tab) v.tab = (CSTAGES.find((s) => cnt[s.id]) || CSTAGES[0]).id;
   $('#cbar').innerHTML = CSTAGES.map((s) => `<i style="--c:${s.c};flex-grow:${cnt[s.id] || .2}"></i>`).join('');
   $('#ctabs').style.setProperty('--nt', CSTAGES.length); $('#ctabs').innerHTML = tabsHtml(CSTAGES, v.tab, cnt);
-  const items = fresh.filter((x) => x.tab === v.tab); LISTS.cust = items;
+  const items = fresh.filter((x) => x.tab === v.tab && !x.cool); LISTS.cust = items;
   const cut = v.more ? items : items.slice(0, ROWMAX), st = CSTAGES.find((s) => s.id === v.tab);
   $('#cust').style.setProperty('--c', st.c);
   $('#cust').innerHTML = cut.map((it) => rowHtml(it, it.src === 'job' && it.job.visit_at && it.tab === 'visit' ? `<b>${dm(dayKey(it.job.visit_at))}</b>${hm(it.job.visit_at)}` : null)).join('')
     + (items.length > cut.length ? `<button type="button" class="lmore" data-more="cust">עוד ${items.length - cut.length}</button>` : '') + (!items.length ? `<div class="empty">אין כאן אף אחד. ${st.hint}.</div>` : '');
-  $('#custSum').innerHTML = `<b>${fresh.length} לקוחות פעילים</b> ב-${CUST_DAYS} הימים האחרונים. ליד שעבר בדיקה עובר לכאן.`;
-  const old = all.length - fresh.length;
-  $('#custOlder').innerHTML = old ? `ועוד ${old} עבודות שלא זזו ${CUST_DAYS} יום. <a href="./">לכל העבודות באפליקציה</a>` : '';
+  $('#custSum').innerHTML = `<b>${fresh.length} לקוחות פעילים</b> — רק מי שזז בשבוע האחרון (מחכים להחלטה על הצעה: שבועיים).`;
+  const old = archItems().length;
+  $('#custOlder').innerHTML = old ? `ועוד ${old} בארכיון. <button type="button" class="linkb" data-goarch>לארכיון</button>` : '';
 }
+
+/* ---------- "מתקררים" (יום לפני שיורדים) + ארכיון ---------- */
+const stageHe = (it) => ({ check: 'פנייה חדשה', replied: 'מחכים ללקוח' })[it.tab] || (CSTAGES.find((s) => s.id === it.tab) || {}).name || '';
+const daysIdle = (t) => Math.max(1, Math.floor((Date.now() - t) / 864e5));
+let COOL = new Map();
+function coolHtml(items) {
+  const c = items.filter((x) => x.cool && x.src !== 'call');   // שיחה בלי וואטסאפ — אין איפה לשמור "להמשיך"; פשוט יורדת אחרי שבוע
+  c.forEach((x) => COOL.set(x.id, x));
+  if (!c.length || D.archOk === false) return '';
+  return `<div class="cool"><div class="ct">מתקררים — מחר יורדים לארכיון</div>${c.map((it) => `<div class="crow"><div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}</span><span class="sm">${esc(stageHe(it))} · בלי תזוזה ${daysIdle(it.touch)} ימים</span></div>`
+    + `<div class="cb"><button class="btn main" type="button" data-keep="${esc(it.id)}">להמשיך עוד שבוע</button><button class="btn" type="button" data-arch="${esc(it.id)}">לארכיון</button></div></div>`).join('')}</div>`;
+}
+async function setLife(it, patch, msg) {
+  const rec = it && it.rec; if (!rec || BUSY) return;
+  const job = it.src === 'job', key = job ? 'id' : 'jid', prev = {};
+  Object.keys(patch).forEach((k) => { prev[k] = rec[k] == null ? null : rec[k]; });
+  Object.assign(rec, patch); renderAll();
+  if (await dbUpdate(job ? 'jobs' : 'wa_leads', rec[key], patch, key)) { toast(msg); return; }
+  Object.assign(rec, prev); renderAll();
+}
+const AREASON = [{ id: 'all', name: 'הכל', c: '#7b68d9' }, { id: 'closed', name: 'נסגר', c: '#2a9a63' }, { id: 'cold', name: 'התקרר', c: '#5f86b8' }, { id: 'nope', name: 'לא רלוונטי', c: '#857d98' }];
+function archItems() { return memo('arch', archItems0); }
+function archItems0() {
+  const live = new Set(inboxItems().map((x) => x.id).concat(custItems().filter((x) => x.live).map((x) => x.id)));
+  const jobCust = new Set(D.jobs.map((j) => j.customer_id)), out = [];
+  D.jobs.forEach((j) => {
+    const id = 'J' + j.id; if (live.has(id)) return; const c = custOf(j.customer_id);
+    out.push({ id, src: 'job', job: j, rec: j, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j),
+      why: j.stage === 'paid' ? 'closed' : j.stage === 'lost' || j.archive_reason === 'nope' ? 'nope' : 'cold' });
+  });
+  // ליד של לקוח שיש לו עבודה — העבודה מייצגת אותו (לא פעמיים)
+  D.leads.filter((l) => isJob(l) && !(l.customer_id && jobCust.has(l.customer_id))).forEach((l) => {
+    const id = 'W' + l.jid; if (live.has(id)) return;
+    out.push({ id, src: 'wa', jid: l.jid, lead: l, rec: l, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)),
+      why: l.status === 'done' ? 'closed' : l.status === 'skip' || l.archive_reason === 'nope' ? 'nope' : 'cold' });
+  });
+  return out.sort((a, b) => b.at - a.at);
+}
+function renderArch() {
+  const all = archItems(), v = VIEW.arch, q = String(v.q || '').trim(), cnt = { all: all.length };
+  all.forEach((x) => { cnt[x.why] = (cnt[x.why] || 0) + 1; });
+  $('#atabs').style.setProperty('--nt', AREASON.length); $('#atabs').innerHTML = tabsHtml(AREASON, v.r, cnt);
+  let items = all.filter((x) => v.r === 'all' || x.why === v.r);
+  if (q) {
+    const ql = q.toLowerCase(), qd = q.replace(/\D/g, '');
+    items = items.filter((x) => (x.name + ' ' + x.place + ' ' + x.what).toLowerCase().includes(ql) || (qd.length >= 3 && normPhone(x.phone).includes(qd)));
+  }
+  const cut = v.more ? items : items.slice(0, 30), WHY = { closed: 'נסגר', cold: 'התקרר', nope: 'לא רלוונטי' };
+  let last = '', html = '';
+  cut.forEach((it) => {
+    const m = it.at ? new Date(it.at).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' }) : 'בלי תאריך';
+    if (m !== last) { html += `<div class="daysep">${m}</div>`; last = m; }
+    html += `<div class="ar"><span style="display:flex">${srcIc(it.src)}</span><div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}</span><span class="sm">${esc(short(it.what, 90))}${it.at ? ' · ' + ago(it.at) : ''}</span></div>`
+      + `<span class="why w-${it.why}">${WHY[it.why]}</span>${it.why === 'cold' && D.archOk !== false ? `<button class="btn" type="button" data-back="${esc(it.id)}">להחזיר</button>` : ''}</div>`;
+  });
+  $('#arch').innerHTML = html + (items.length > cut.length ? `<button type="button" class="lmore" data-more="arch">עוד ${items.length - cut.length}</button>` : '')
+    + (!items.length ? `<div class="empty">${q ? 'לא נמצא בארכיון.' : 'הארכיון ריק.'}</div>` : '');
+  $('#archSum').innerHTML = `<b>${all.length} בארכיון</b>. שום דבר לא נמחק. לקוח שכותב שוב בוואטסאפ חוזר לבד ללוח.`;
+}
+function archClick(e) {
+  const g = e.target.closest('[data-goarch]'); if (g) { curSec = 'p-arch'; renderNav(); jump('p-arch'); return; }
+  const k = e.target.closest('[data-keep]'); if (k) return setLife(COOL.get(k.dataset.keep), { keep_until: new Date(Date.now() + LIVE_DAYS * 864e5).toISOString() }, 'נשאר בלוח עוד שבוע');
+  const a = e.target.closest('[data-arch]'); if (a) return setLife(COOL.get(a.dataset.arch), { archived_at: new Date().toISOString(), archive_reason: 'cold' }, 'הועבר לארכיון');
+}
+$('#p-inbox').addEventListener('click', archClick); $('#p-cust').addEventListener('click', archClick);
+$('#atabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (!b) return; VIEW.arch.r = b.dataset.tab; VIEW.arch.more = false; renderArch(); });
+$('#archQ').addEventListener('input', (e) => { VIEW.arch.q = e.target.value; VIEW.arch.more = false; renderArch(); });
+$('#arch').addEventListener('click', (e) => {
+  if (e.target.closest('[data-more]')) { VIEW.arch.more = true; renderArch(); return; }
+  const b = e.target.closest('[data-back]'); if (!b) return;
+  const it = archItems().find((x) => x.id === b.dataset.back);
+  if (it) setLife(it, { archived_at: null, keep_until: new Date(Date.now() + LIVE_DAYS * 864e5).toISOString() }, 'חזר ללוח לשבוע');
+});
 const KTABS = [{ id: 'cust', name: 'לקוחות ופניות', c: '#b0587d', kinds: ['customer', 'lead', 'unclear'] }, { id: 'team', name: 'ספקים וצוות', c: '#8a6440', kinds: ['supplier', 'team'] }, { id: 'open', name: 'עם צעד פתוח', c: '#e07a3a', kinds: null }];
 const KIND_HE = { customer: 'לקוח', lead: 'פנייה חדשה', supplier: 'ספק', team: 'צוות', unclear: 'לא ברור' };
 function renderCalls() {
@@ -800,8 +889,8 @@ function renderTiles() {
 }
 $('#tiles').addEventListener('click', (e) => { const b = e.target.closest('[data-sec]'); if (b) { curSec = b.dataset.sec; jump(b.dataset.sec); renderNav(); } });
 const NAV_ICON = { 'p-today': '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>', 'p-inbox': TI.inbox, 'p-cust': '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
-  'p-calls': TI.phone, 'p-tasks': TI.check, 'p-cal': TI.cal, 'p-money': '<path d="M7 3h7l4 4v14H7z"/><path d="M10 12h5M10 16h5"/>' };
-const NAVN = { 'p-today': 'היום', 'p-inbox': 'פניות', 'p-cust': 'לקוחות', 'p-calls': 'שיחות', 'p-tasks': 'משימות', 'p-cal': 'יומן', 'p-money': 'כסף' };
+  'p-calls': TI.phone, 'p-tasks': TI.check, 'p-cal': TI.cal, 'p-money': '<path d="M7 3h7l4 4v14H7z"/><path d="M10 12h5M10 16h5"/>', 'p-arch': '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/>' };
+const NAVN = { 'p-today': 'היום', 'p-inbox': 'פניות', 'p-cust': 'לקוחות', 'p-calls': 'שיחות', 'p-tasks': 'משימות', 'p-cal': 'יומן', 'p-money': 'כסף', 'p-arch': 'ארכיון' };
 let curSec = 'p-today';
 function badge(id) {
   if (id === 'p-today') return AG.filter((a) => !a.done).length;
@@ -824,7 +913,7 @@ function navGo(e) {
 }
 function openMoreMenu() {
   CUR = { id: 'menu' }; WZ = null; SL = [];
-  const ids = ['p-calls', 'p-tasks', 'p-money'].filter((id) => !$('#' + id).hidden);
+  const ids = ['p-calls', 'p-tasks', 'p-money', 'p-arch'].filter((id) => !$('#' + id).hidden);
   $('#sheet').style.setProperty('--pc', 'var(--lav)');
   $('#sheet').innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2 id="shT">עוד</h2><div class="sacts">${ids.map((id) => `<button class="btn" type="button" data-go="${id}">${NAVN[id]}${badge(id) ? ' · ' + badge(id) : ''}</button>`).join('')}${isOwner() ? '<a class="btn" href="home.html">לוח הבית</a>' : ''}<button class="btn" type="button" data-go="morning">סידור הבוקר</button><a class="btn ghost" href="./">לאפליקציה</a></div>`;
   showSheet();
@@ -918,7 +1007,7 @@ addEventListener('resize', () => $$('.seg').forEach(pill));
 
 function renderAll(bumpIt) {
   dirty();   // כל ציור מחדש מתחיל מהנתונים העדכניים (כתיבות משנות את D בין ציורים)
-  renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderTiles(); renderHero(bumpIt); renderNav();
+  renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 }
@@ -975,10 +1064,13 @@ async function load() {
     const owner = isOwner();
     // Supabase מחזיר עד 1000 שורות לבקשה (ברירת-מחדל) — דפדוף, כדי ששום רשומה לא תיחתך בשקט (סבב-ביקורת לוח 2)
     const all = async (mk, cap) => { let out = [], from = 0; for (;;) { const r = await mk().range(from, from + 999); if (r.error) return r; out = out.concat(r.data || []); if (!r.data || r.data.length < 1000) return { data: out }; if (out.length >= cap) { console.warn('הגענו לתקרת טעינה', cap); return { data: out }; } from += 1000; } };
+    // עמודות הארכיון (sql/017). אם עוד לא הורץ בענן — טוענים בלעדיהן, והכפתורים "להמשיך/לארכיון/להחזיר" מוסתרים
+    const AR = ',keep_until,archived_at,archive_reason';
+    const arch = async (mk, cap) => { const r = await all(() => mk(AR), cap); if (!r.error || !/keep_until|archived_at|archive_reason|42703/.test((r.error.code || '') + (r.error.message || ''))) return r; D.archOk = false; return all(() => mk(''), cap); };
     const [l, t, j, c, p, k] = await Promise.all([
-      all(() => sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,last_activity,scanned_at,customer_id').is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }).order('jid'), 3000),
+      arch((x) => sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,last_activity,scanned_at,customer_id' + x).is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }).order('jid'), 3000),
       all(() => sb.from('tasks').select('id,title,due,job_id,done_at,created_at').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 6000),
-      all(() => sb.from('jobs').select('id,customer_id,title,stage,stage_changed_at,visit_at,quote_sent_at,problem,created_at,updated_at' + (owner ? ',price_agreed' : '')).is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 10000),
+      arch((x) => sb.from('jobs').select('id,customer_id,title,stage,stage_changed_at,visit_at,quote_sent_at,problem,created_at,updated_at' + (owner ? ',price_agreed' : '') + x).is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 10000),
       all(() => sb.from('customers').select('id,name,address,phone').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 20000),
       owner ? all(() => sb.from('payments').select('id,job_id,amount,paid_at,method,note,invoice_issued').is('deleted_at', null).order('paid_at', { ascending: false }).order('id'), 10000) : Promise.resolve({ data: [] }),
       !owner ? Promise.resolve({ data: [] }) : sb.from('calls').select('id,started_at,duration,contact,phone,wa_jid,kind,data,handled_at,handled_by,customer_id').is('deleted_at', null).order('started_at', { ascending: false }).limit(1000)]);
