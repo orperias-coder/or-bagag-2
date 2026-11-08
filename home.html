@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3f6f2">
+<meta name="robots" content="noindex">
+<title>לוח הבית · אור וזוהרי</title>
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
+<style>
+/* לוח הבית (07.11.2026): חשבון הבית בפועלים, דרך Financy. אותה שפה כמו לוח העסק ("בית נעים"), בגוון ירוק-סגול
+   שאור ביקש ללוח הבית (01.11). רק אור וזוהרי (RLS בענן; לרון אין גישה). בהיר בלבד. */
+:root{--bg:#f3f6f2;--bg2:#f7f3fb;--ink:#26302a;--muted:#7b857e;--line:#e4ebe5;--line2:#d5dfd7;--gr:#3c9a6a;--gr-deep:#2a7350;--gr-soft:#e3f3ea;--lav:#7b68d9;--lav-soft:#ece8fb;--out:#c4553a;
+  --spring:cubic-bezier(.34,1.5,.5,1);--soft:cubic-bezier(.22,1,.36,1);--puff:0 1px 2px rgba(30,60,40,.05),0 14px 34px -16px rgba(40,80,60,.22);color-scheme:light}
+html{background:var(--bg)}
+body{margin:0;background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 75%) fixed;color:var(--ink);font-family:"Rubik",system-ui,sans-serif;font-size:15.5px;line-height:1.55;direction:rtl;text-align:right}
+.wrap{max-width:1100px;margin:0 auto;padding:18px max(16px,env(safe-area-inset-right,0px)) 60px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px}
+.top{display:flex;align-items:center;gap:12px}
+.top .logo{height:40px}
+.top a.btn{margin-inline-start:auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:6px 15px;border-radius:12px;border:1px solid var(--line2);background:#fff;font:inherit;font-size:.88rem;font-weight:500;cursor:pointer;color:inherit;text-decoration:none;transition:transform .45s var(--spring)}
+.btn:active{transform:scale(.94)}
+.hero{border-radius:28px;padding:24px 28px;background:radial-gradient(120% 140% at 0% 0%,#fff8ef 0%,transparent 55%),linear-gradient(120deg,#e2f2e8 0%,#eef4ee 50%,#efe9fb 100%);box-shadow:var(--puff);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;animation:rise .7s var(--spring) backwards}
+.hero .date{color:var(--gr-deep);font-size:.88rem;font-weight:500}
+.hero h1{margin:4px 0 2px;font-size:1.7rem;font-weight:600}
+.hero p{margin:0;color:#56605a}
+.bal{text-align:left}
+.bal small{display:block;color:var(--muted);font-size:.82rem}
+.bal b{font-size:2.3rem;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.1}
+.bal b.neg{color:var(--out)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tile{--tc:var(--gr);border-radius:22px;padding:16px 18px;background:linear-gradient(160deg,color-mix(in srgb,var(--tc) 13%,#fff),color-mix(in srgb,var(--tc) 4%,#fff));box-shadow:var(--puff);display:flex;flex-direction:column;gap:2px;animation:rise .7s var(--spring) backwards;animation-delay:calc(var(--i)*50ms + 80ms)}
+.tile .lb{font-size:.85rem;color:#56605a}
+.tile .v{font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .dl{font-size:.78rem;color:var(--muted)}
+.panel{background:#fff;border:1px solid var(--line);border-radius:24px;padding:18px 18px 20px;box-shadow:var(--puff);display:flex;flex-direction:column;gap:12px;animation:rise .7s var(--spring) backwards;animation-delay:.25s}
+.panel h2{margin:0;font-size:1.12rem;font-weight:600;color:var(--gr-deep)}
+.panel .sum{color:var(--muted);font-size:.88rem}
+.rows{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:10px 14px;border-top:1px solid #eef3ef;align-items:center}
+.r:first-child{border-top:0}
+.r .t{min-width:0}
+.r .t b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .t small{color:var(--muted);font-size:.8rem}
+.r .a{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.r .a.in{color:var(--gr-deep)}
+.r .a.out{color:var(--out)}
+.day{font-size:.78rem;font-weight:600;color:var(--muted);padding:8px 14px 2px;background:#fafcfa;border-top:1px solid #eef3ef}
+.day:first-child{border-top:0}
+.empty{color:var(--muted);font-size:.88rem;text-align:center;padding:14px;border-radius:14px;border:1.5px dashed var(--line2)}
+.two{display:grid;grid-template-columns:3fr 2fr;gap:18px;align-items:start}
+.todo{display:flex;flex-direction:column;gap:8px}
+.todo div{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:14px;background:var(--gr-soft)}
+.todo i{width:8px;height:8px;border-radius:50%;background:var(--gr);margin-top:8px;flex:none}
+.gate{text-align:center;margin:12vh auto 0;max-width:420px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.foot{color:var(--muted);font-size:.78rem;text-align:center}
+@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}}
+@media (max-width:800px){.two{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}.tiles .tile:last-child{grid-column:1/-1}.hero{grid-template-columns:1fr;padding:20px}.bal{text-align:right}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="board.html" aria-label="ללוח העסק"><img class="logo" src="logo.png" alt="אור בגג"></a><a class="btn" href="board.html">ללוח העסק</a></div>
+  <div class="gate" id="gate" hidden><h2 id="gT">צריך להתחבר</h2><p id="gP">לוח הבית משתמש באותה התחברות של האפליקציה.</p><a class="btn" href="./">להתחברות באפליקציה</a></div>
+  <div id="main" hidden>
+    <section class="hero">
+      <div><span class="date" id="date"></span><h1>הבית</h1><p id="hello"></p></div>
+      <div class="bal"><small id="balL">יתרה בעו״ש</small><b id="bal">—</b><small id="balAt"></small></div>
+    </section>
+    <div class="tiles" id="tiles" style="margin-top:18px"></div>
+    <div class="two" style="margin-top:18px">
+      <section class="panel"><h2>תנועות אחרונות</h2><span class="sum" id="txSum"></span><div class="rows" id="tx"></div></section>
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <section class="panel"><h2>חוזר כל חודש</h2><span class="sum">חיובים שמופיעים בכמה חודשים (הוראות קבע, מנויים). מתמלא ככל שיש יותר היסטוריה.</span><div class="rows" id="rec"></div></section>
+        <section class="panel"><h2>מה עוד צריך</h2><div class="todo" id="todo"></div></section>
+      </div>
+    </div>
+    <p class="foot" id="foot"></p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* לוח הבית — קריאה בלבד. הנתונים מגיעים מהמק (home_bank.py, פעם ביום); הדף לא נוגע ב-Financy ואין בו מפתחות. */
+const SB_URL='https://wxnmujdcrqsgokzlptkh.supabase.co',SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
+const FX=window.HOME_FIXTURE||null, sb=FX?null:supabase.createClient(SB_URL,SB_ANON,{db:{schema:'app2'},auth:{persistSession:true,autoRefreshToken:true,storageKey:'ob2_auth'}});
+const OWNERS={'or.perias@gmail.com':'אור','zohariadar@gmail.com':'זוהרי'};
+const $=s=>document.querySelector(s), esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const shek=n=>(n<0?'−':'')+Math.abs(Math.round(+n||0)).toLocaleString('he-IL')+' ₪';
+const dm=k=>{const p=String(k||'').split('-');return p.length===3?+p[2]+'.'+ +p[1]:''};
+const ym=k=>String(k||'').slice(0,7);
+function gate(t,p){$('#gate').hidden=false;if(t)$('#gT').textContent=t;if(p)$('#gP').textContent=p}
+async function load(){
+  if(FX)return{email:FX.email,acc:FX.accounts,tx:FX.transactions};
+  const {data:{session}}=await sb.auth.getSession(); if(!session)return null;
+  const [a,t]=await Promise.all([sb.from('bank_accounts').select('*'),sb.from('bank_tx').select('id,account_tail,booked,amount,description,counterparty,category,balance_after,status').order('booked',{ascending:false}).limit(1000)]);
+  if(a.error||t.error)return{email:session.user.email,missing:true};
+  return{email:session.user.email,acc:a.data,tx:t.data};
+}
+function recurring(tx){   // אותו תיאור (בלי ספרות) ב-2 חודשים שונים לפחות, הוצאה
+  const g={};tx.filter(x=>x.amount<0).forEach(x=>{const k=String(x.description||x.counterparty||'').replace(/[\d\s.\-/]+/g,' ').trim().slice(0,30);if(!k)return;(g[k]=g[k]||[]).push(x)});
+  return Object.entries(g).map(([k,xs])=>({k,months:new Set(xs.map(x=>ym(x.booked))).size,last:xs[0],avg:xs.reduce((s,x)=>s+x.amount,0)/xs.length})).filter(r=>r.months>=2).sort((a,b)=>a.avg-b.avg);
+}
+(async()=>{
+  $('#date').textContent=new Date().toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'});
+  let d; try{d=await load()}catch(e){console.warn(e);return gate('לא הצלחתי לטעון','בדוק רשת ורענן.')}
+  if(!d)return gate();
+  const me=OWNERS[String(d.email||'').toLowerCase()]; if(!me)return gate('הדף הזה רק לאור ולזוהרי','');
+  if(d.missing)return gate('חשבון הבית עוד לא מחובר','החיבור לבנק הפועלים מוכן במחשב של אור ומחכה לאישור שלו להפעלה.');
+  $('#main').hidden=false;
+  const h=new Date().getHours();$('#hello').textContent=(h<12?'בוקר טוב':h<17?'צהריים טובים':'ערב טוב')+', '+me+'. זה מצב חשבון הבית בפועלים.';
+  const chk=d.acc.find(a=>String(a.id).includes(':checking:')),cards=d.acc.filter(a=>String(a.id).includes(':card:'));
+  if(chk&&chk.balance!=null){$('#bal').textContent=shek(chk.balance);$('#bal').classList.toggle('neg',chk.balance<0);$('#balAt').textContent='נכון ל-'+dm(String(chk.balance_at||'').slice(0,10))}
+  const tx=d.tx, mon=ym(new Date().toISOString().slice(0,10)), thisM=tx.filter(x=>ym(x.booked)===mon);
+  const inM=thisM.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0), outM=thisM.filter(x=>x.amount<0).reduce((s,x)=>s+x.amount,0);
+  const cardDue=cards.reduce((s,a)=>s+(+a.balance||0),0);
+  $('#tiles').innerHTML=[
+    {c:'#3c9a6a',l:'נכנס החודש',v:shek(inM),d:thisM.filter(x=>x.amount>0).length+' הפקדות'},
+    {c:'#c4553a',l:'יצא החודש',v:shek(Math.abs(outM)),d:thisM.filter(x=>x.amount<0).length+' חיובים'},
+    {c:'#7b68d9',l:'כרטיסים (חיוב קרוב)',v:shek(Math.abs(cardDue)),d:cards.length+' כרטיסים בפועלים'}].map((t,i)=>`<div class="tile" style="--tc:${t.c};--i:${i}"><span class="lb">${t.l}</span><span class="v">${t.v}</span><span class="dl">${t.d}</span></div>`).join('');
+  let last='',html='';tx.slice(0,40).forEach(x=>{const k=x.booked;if(k!==last){html+=`<div class="day">${new Date(k+'T12:00').toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'numeric'})}</div>`;last=k}
+    html+=`<div class="r"><div class="t"><b>${esc(x.description||x.counterparty||'תנועה')}</b><small>${esc([x.account_tail,/^[A-Z_]+$/.test(x.category||'')?'':x.category,x.status==='PENDING'?'ממתין':''].filter(Boolean).join(' · '))}</small></div><span class="a ${x.amount>0?'in':'out'}">${x.amount>0?'+':''}${shek(x.amount)}</span></div>`});
+  $('#tx').innerHTML=html||'<div class="empty">אין עדיין תנועות.</div>';
+  $('#txSum').textContent=tx.length?`${tx.length} תנועות מאז ${dm(tx[tx.length-1].booked)}`:'';
+  const rec=recurring(tx);
+  $('#rec').innerHTML=rec.map(r=>`<div class="r"><div class="t"><b>${esc(r.k)}</b><small>${r.months} חודשים · אחרון ${dm(r.last.booked)}</small></div><span class="a out">${shek(r.avg)}</span></div>`).join('')||'<div class="empty">עוד אין מספיק היסטוריה. החשבון חדש (מאוקטובר).</div>';
+  const todo=['להעביר את הוראות הקבע של הבית לחשבון בפועלים (המשימה הראשונה של זוהרי). כל הוראה שתעבור תופיע כאן ב"חוזר כל חודש".','לקבוע כמה כל אחד מעביר לבית כל חודש, ולסמן כאן כשזה נכנס.'];
+  if(chk&&chk.connection_expiry)todo.push('החיבור לבנק בתוקף עד '+new Date(chk.connection_expiry).toLocaleDateString('he-IL')+'.');
+  $('#todo').innerHTML=todo.map(t=>`<div><i></i><span>${esc(t)}</span></div>`).join('');
+  const up=d.acc.reduce((m,a)=>a.updated_at>m?a.updated_at:m,'');$('#foot').textContent=up?'עודכן מהבנק: '+new Date(up).toLocaleString('he-IL',{weekday:'short',hour:'2-digit',minute:'2-digit'}):'';
+})();
+</script>
+</body>
+</html>
