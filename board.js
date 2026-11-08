@@ -44,6 +44,8 @@ const cleanName = (s) => String(s || '').replace(/[‎‏‪-‮⁦-⁩]/g, '').
 const leadPhone = (l) => l.phone || (/@s\.whatsapp\.net$/.test(l.jid || '') ? normPhone(l.jid.split('@')[0]) : '');   // הסריקה לא תמיד ממלאת phone; ב-jid של שיחה פרטית יש את המספר
 const leadName = (l) => (l.name && !looksPhone(l.name) ? cleanName(l.name) : fmtPhone(l.name || l.phone)) || 'ללא שם';
 function waHref(phone, text) { let p = normPhone(phone); if (p.startsWith('0')) p = '972' + p.slice(1); return p ? 'https://wa.me/' + p + (text ? '?text=' + encodeURIComponent(text) : '') : ''; }
+// כתובת מדויקת (רחוב + מספר) → govmap, שם אפשר לראות את הגג מלמעלה ולמדוד (08.11, רעיון של אור)
+const gisHref = (a) => { a = String(a || '').trim(); return /\d/.test(a) && /[א-ת]{2}/.test(a) ? 'https://www.govmap.gov.il/?q=' + encodeURIComponent(a) + '&z=10&b=1' : ''; };
 const telHref = (p) => normPhone(p) ? 'tel:' + normPhone(p) : '';
 // אינדקסים + זיכרון-ביניים לכל גרסת-נתונים (סבב-ביקורת לוח 2: 10,000 לקוחות → הקשה תקעה שניות)
 let IDX = null, MEMO = {};
@@ -95,7 +97,7 @@ const ITABS = [{ id: 'check', name: 'לבדוק', hint: 'פניות חדשות',
 /* ---------- לקוחות בתהליך: עבודות באפליקציה + לידים מוואטסאפ שכבר התקדמו ---------- */
 /* ---------- חיים של שבוע + ארכיון (אור אישר את המוקאפ 08.11): במסך הראשי רק מה שזז השבוע ---------- */
 const LIVE_DAYS = 7, QUOTE_DAYS = 14;   // מחכים להחלטה על הצעה — 14
-const liveDays = (tab) => (tab === 'quote' ? QUOTE_DAYS : LIVE_DAYS);
+const liveDays = (tab) => (tab === 'sent' ? QUOTE_DAYS : LIVE_DAYS);
 // הועבר ידנית לארכיון — עד שיש תזוזה חדשה אחרי ההעברה (לקוח כתב שוב → חוזר לבד)
 const manualArch = (rec, at) => !!(rec && rec.archived_at) && at <= T(rec.archived_at);
 // עד מתי במסך הראשי: תזוזה אחרונה + 7 (הצעה: 14), או "להמשיך עוד שבוע" — המאוחר מביניהם
@@ -110,7 +112,9 @@ function liveMark(it, rec, touch) {
 const CSTAGES = [
   { id: 'sched', name: 'לתאם ביקור', hint: 'כרטיס נפתח, עוד אין מועד', c: '#2f8f98', jobs: ['lead'], wa: [] },
   { id: 'visit', name: 'ביקור נקבע', hint: 'לבוא ולמדוד', c: '#d39a1c', jobs: ['visit'], wa: ['visit'] },
-  { id: 'quote', name: 'הצעת מחיר', hint: 'להכין או מחכים שיחליטו', c: '#8a6440', jobs: ['quote', 'sent'], wa: ['quote_sent'] },
+  // 08.11 (אור): "להכין הצעה" ו"הצעה נשלחה" — שתי לשוניות. ביקור שכבר היה = להכין הצעה.
+  { id: 'quote', name: 'להכין הצעה', hint: 'הביקור היה, צריך לשלוח הצעה', c: '#8a6440', jobs: ['quote'], wa: [] },
+  { id: 'sent', name: 'הצעה נשלחה', hint: 'מחכים שיחליטו', c: '#6f9f3a', jobs: ['sent'], wa: ['quote_sent'] },
   { id: 'doing', name: 'לביצוע', hint: 'אישרו, לבצע ולגבות', c: '#e07a3a', jobs: ['approved', 'doing'], wa: ['approved'] },
 ];
 // לא updated_at/created_at: הייבוא מהישנה (04.11) נגע בכולן, ואז 63 לידים ישנים נראו "פעילים". שינוי-שלב וביקור — כן.
@@ -119,7 +123,8 @@ function custItems() { return memo('cust', custItems0); }
 function custItems0() {
   const out = [];
   D.jobs.filter((j) => !['paid', 'lost'].includes(j.stage)).forEach((j) => {
-    const st = CSTAGES.find((s) => s.jobs.includes(j.stage)); if (!st) return; const c = custOf(j.customer_id);
+    let st = CSTAGES.find((s) => s.jobs.includes(j.stage)); if (!st) return; const c = custOf(j.customer_id);
+    if (j.stage === 'visit' && j.visit_at && T(j.visit_at) < Date.now() - 2 * 3600e3) st = CSTAGES.find((s) => s.id === 'quote');   // הביקור כבר היה
     out.push(liveMark({ id: 'J' + j.id, src: 'job', job: j, cust: c, tab: st.id, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j) }, j));
   });
   const jobCust = new Set(D.jobs.map((j) => j.customer_id));
@@ -484,7 +489,8 @@ function itemBody(it) {
     if (c.wa_jid) acts.push('<button class="btn ghost" type="button" data-s="towa">לפנייה בוואטסאפ של אותו אדם</button>');
   }
   const ph = it.phone || (it.call && it.call.phone) || (it.cust && it.cust.phone);
-  if (ph) extra.unshift(`<div class="row">${telHref(ph) ? `<a class="btn" href="${telHref(ph)}">להתקשר</a>` : ''}${waHref(ph) ? `<a class="btn" target="_blank" rel="noopener" href="${waHref(ph)}">וואטסאפ</a>` : ''}</div>`);
+  const adr = (it.cust && it.cust.address) || it.place || '', gis = gisHref(adr);
+  if (ph || gis) extra.unshift(`<div class="row">${telHref(ph) ? `<a class="btn" href="${telHref(ph)}">להתקשר</a>` : ''}${waHref(ph) ? `<a class="btn" target="_blank" rel="noopener" href="${waHref(ph)}">וואטסאפ</a>` : ''}${gis ? `<a class="btn" target="_blank" rel="noopener" href="${gis}">מפה ומדידה</a>` : ''}</div>`);
   return { rows, extra, acts };
 }
 function openItem(it, list) {
