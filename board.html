@@ -227,7 +227,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .bar{display:flex;gap:4px;height:8px}
 .bar i{border-radius:99px;background:var(--c);transition:flex-grow .7s var(--spring);min-width:8px}
 .lrows{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;background:#fff;overflow:hidden}
-.lr{display:grid;grid-template-columns:auto minmax(0,1fr) auto 14px;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid #f1edf8;cursor:pointer;outline:none;transition:background .15s}
+.lr{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto 14px;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid #f1edf8;cursor:pointer;outline:none;transition:background .15s}
 .lr:first-child{border-top:0}
 .lr:hover,.lr:focus-visible{background:color-mix(in srgb,var(--c) 6%,#fff)}
 .lr.sel{background:color-mix(in srgb,var(--c) 12%,#fff)}
@@ -247,6 +247,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .lmore{border:0;border-top:1px solid #f1edf8;background:#faf8fe;font-weight:500;padding:10px;cursor:pointer}
 .lrows .empty{border:0;border-radius:0}
 .older{color:var(--muted);font-size:.85rem}
+.rwa{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#e6f4ec;color:#2a9a63;flex:none}.rwa svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.rwa:hover{background:#d3eddf}
+#wzProb{resize:none;overflow:hidden;min-height:70px}
 .linkb{border:0;background:none;padding:0;font:inherit;color:var(--lav-deep);font-weight:500;cursor:pointer;text-decoration:underline}
 .cool{background:#eef3fa;border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .cool .ct{font-size:.9rem;font-weight:600;color:#4a6f9e}
@@ -453,7 +455,7 @@ button,input,select,textarea{font:inherit;color:inherit}
       </section>
 
       <section class="panel span12" id="p-cust" style="--i:3">
-        <div class="ph"><span class="sq"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg></span><h2>לקוחות בתהליך</h2><span class="sum" id="custSum"></span></div>
+        <div class="ph"><span class="sq"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg></span><h2>לקוחות</h2><span class="sum" id="custSum"></span></div>
         <div id="custCool"></div>
         <div class="bar" id="cbar" aria-hidden="true"></div>
         <div class="ltabs" id="ctabs" role="tablist" aria-label="שלבים"></div>

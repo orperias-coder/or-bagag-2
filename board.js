@@ -267,7 +267,7 @@ function rowHtml(it, extraRight) {
   return `<div class="lr ${CUR && CUR.id === it.id ? 'sel' : ''}" data-row="${esc(it.id)}" role="button" tabindex="0" aria-label="${esc(it.name)}, לפתוח פרטים">
     <span style="display:flex;gap:3px">${icons}</span>
     <div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}${it.urgent ? '<span class="urg">דחוף</span>' : ''}</span><span class="sm">${esc(it.what || '')}</span></div>
-    <span class="ag ${it.late ? 'late' : ''}">${extraRight != null ? extraRight : ago(it.at)}</span>${ARR}</div>`;
+    <span class="ag ${it.late ? 'late' : ''}">${extraRight != null ? extraRight : ago(it.at)}</span>${waHref(it.phone) ? `<a class="rwa" href="${waHref(it.phone)}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(it.name)}" title="לפתוח וואטסאפ"><svg viewBox="0 0 24 24">${SRC.wa.svg}</svg></a>` : '<span></span>'}${ARR}</div>`;
 }
 function tabsHtml(tabs, cur, counts) {
   return tabs.map((s) => `<button type="button" class="ltab" role="tab" data-tab="${s.id}" style="--c:${s.c}" aria-selected="${s.id === cur}"><i></i>${s.name} <b>${counts[s.id] || 0}</b></button>`).join('');
@@ -410,6 +410,7 @@ Object.keys(LIST_OF).forEach((k) => {
   $(TABS_OF[k]).addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (!b || b.dataset.tab === VIEW[k].tab) return; VIEW[k].tab = b.dataset.tab; VIEW[k].more = false; unboot(); renderAll(); });
   $(LIST_OF[k]).addEventListener('click', (e) => {
     if (e.target.closest('[data-more]')) { VIEW[k].more = true; renderAll(); return; }
+    if (e.target.closest('a.rwa')) return;   // כפתור הוואטסאפ בשורה — פותח וואטסאפ, לא את החלונית
     const r = e.target.closest('[data-row]'); if (r) openItem(LISTS[k].find((x) => x.id === r.dataset.row), LISTS[k]);
   });
   $(LIST_OF[k]).addEventListener('keydown', (e) => { const r = e.target.closest && e.target.closest('[data-row]'); if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); } });
@@ -556,10 +557,17 @@ $('#agenda').addEventListener('keydown', (e) => { const row = e.target.closest &
 
 /* ---------- האשף: פנייה → כרטיס → ביקור ביומן → דמי ביקור → חשבונית ---------- */
 const WSTEPS = ['בודקים', 'מתאמים ביקור', 'דמי ביקור', 'חשבונית'];
+// איש-קשר ששמור אצל אור כ"לקוח דימה זכרון": השם = דימה, המקום = זכרון (08.11, אור: "שהכרטיס יהיה מלא")
+function splitContactName(s) {
+  s = cleanName(s); const m = s.match(/^(?:לקוח(?:ה)?|לק'|לק׳)\s+(\S+)\s+(.+)$/);
+  return m ? { name: m[1], place: m[2].trim() } : { name: s, place: '' };
+}
 function startWizard(it) {
   const c = it.call || (it.calls && it.calls[0]), a = (c && c.data) || {}, l = it.lead;
-  WZ = { it, step: 0, name: it.name && !looksPhone(it.name) ? it.name : (a.person || ''), phone: normPhone(it.phone || (c && c.phone)) || '', place: it.place || a.place || '',
-    problem: (l && l.summary) || a.summary || it.what || '', visit: a.visit || null, jobId: null, customerId: null, payId: null, fee: null };
+  const nm = splitContactName(it.name && !looksPhone(it.name) ? it.name : (a.person || ''));
+  const ld = (l && l.data) || {};
+  WZ = { it, step: 0, name: nm.name, phone: normPhone(it.phone || (c && c.phone)) || '', place: it.place || a.place || nm.place || '',
+    problem: [ld.problem, l && l.summary].filter(Boolean).join('\n') || a.summary || it.what || '', visit: a.visit || null, jobId: null, customerId: null, payId: null, fee: null };
   if (it.src === 'job') { const j = it.job; WZ.jobId = j.id; WZ.customerId = j.customer_id; WZ.step = j.stage === 'lead' ? 1 : 2; WZ.problem = j.problem || ''; if (j.visit_at) WZ.visitAt = j.visit_at; WZ.showFee = !!(j.visit_at && T(j.visit_at) < Date.now()); }
   if (it.src === 'wa' && l && l.customer_id) { WZ.useCust = l.customer_id; const j = D.jobs.find((x) => x.customer_id === l.customer_id && ['lead', 'visit'].includes(x.stage)); if (j) { WZ.jobId = j.id; WZ.customerId = j.customer_id; WZ.step = j.stage === 'lead' ? 1 : 2; if (j.visit_at) WZ.visitAt = j.visit_at; } }
   renderWizard();
@@ -582,7 +590,7 @@ function renderWizard() {
       <div class="done-badge">✓ הכרטיס נפתח${w.name ? ': ' + esc(w.name) : ''}</div>
       ${w.visit ? `<p class="hint2">בשיחה נקבע ביקור ב-${esc(dm(w.visit.date))}${tm ? ' בשעה ' + esc(tm) : ''}. אפשר לשנות.</p>` : '<p class="hint2">מתי באים לבדוק? המועד נכנס לעבודה באפליקציה וליומן בלוח.</p>'}
       <div class="two"><label>תאריך<input type="date" id="wzDate" value="${esc(d)}" min="${dayKey(Date.now() - 864e5)}"></label><label>שעה<input type="time" id="wzTime" value="${esc(tm)}" step="900"></label></div>
-      <div class="sacts"><button class="btn main" type="button" data-s="wz-visit">לקבוע את הביקור</button><button class="btn ghost" type="button" data-s="wz-later">עוד לא, אתאם אחר כך</button></div></div>`;
+      <div class="sacts"><button class="btn main" type="button" data-s="wz-visit">לקבוע את הביקור</button><button class="btn" type="button" data-s="wz-visited">כבר הייתי בביקור</button><button class="btn ghost" type="button" data-s="wz-later">עוד לא, אתאם אחר כך</button></div></div>`;
   }
   if (w.step === 2) {
     const v = w.visitAt ? new Date(w.visitAt) : null;
@@ -590,7 +598,7 @@ function renderWizard() {
       ${v ? `<div class="done-badge">✓ ביקור נקבע: ${esc(dayHe(dayKey(v)))} ב-${hm(v)}</div>
       <div class="row"><a class="btn" target="_blank" rel="noopener" href="${gcalHref()}">להוסיף ליומן גוגל</a>${waHref(w.phone) ? `<a class="btn" target="_blank" rel="noopener" href="${waHref(w.phone, confirmText())}">לשלוח אישור בוואטסאפ</a>` : ''}</div>` : ''}
       ${isOwner() && feeExists(w) ? `<div class="done-badge" style="background:var(--accent-soft);color:#8a4a1c">כבר נרשמו דמי ביקור לעבודה הזו. לא צריך שוב.</div><div class="sacts"><button class="btn main" type="button" data-s="wz-end">סיימנו</button></div>` : ''}
-      ${isOwner() && !feeExists(w) && !w.showFee ? `<div class="sacts"><button class="btn main" type="button" data-s="wz-end">סיימנו</button><button class="btn" type="button" data-s="wz-showfee">${v && v.getTime() < Date.now() ? 'הביקור היה: לרשום דמי ביקור' : 'לרשום דמי ביקור עכשיו (שולם מראש)'}</button></div><p class="hint2">דמי ביקור וחשבונית אפשר לרשום גם אחרי הביקור, מהכרטיס בחלון "לקוחות בתהליך".</p>` : ''}
+      ${isOwner() && !feeExists(w) && !w.showFee ? `<div class="sacts"><button class="btn main" type="button" data-s="wz-end">סיימנו</button><button class="btn" type="button" data-s="wz-showfee">${v && v.getTime() < Date.now() ? 'הביקור היה: לרשום דמי ביקור' : 'לרשום דמי ביקור עכשיו (שולם מראש)'}</button></div><p class="hint2">דמי ביקור וחשבונית אפשר לרשום גם אחרי הביקור, מהכרטיס בחלון "לקוחות".</p>` : ''}
       ${isOwner() && !feeExists(w) && w.showFee ? `<p class="hint2">דמי ביקור: כמה ומתי משלמים?</p>
       <div class="opts">
         <label class="opt"><input type="radio" name="fee" value="none" checked>בלי דמי ביקור</label>
@@ -611,6 +619,7 @@ function renderWizard() {
   showSheet();
   $$('#sheet [name=fee]').forEach((r) => r.addEventListener('change', () => { const on = r.value !== 'none'; $('#wzAmt').disabled = !on; $('#wzMeth').disabled = r.value !== 'now'; }));
   if ($('#wzAmt')) { $('#wzAmt').disabled = true; $('#wzMeth').disabled = true; }
+  const ta = $('#wzProb'); if (ta) { const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; }; ta.addEventListener('input', grow); requestAnimationFrame(grow); }   // בלי גלילה: החלון גדל לפי הטקסט
   // אחרי "זה אותו אדם?" — תיקון הטלפון מבטל את השאלה ומחזיר את "לפתוח כרטיס" (בודקים מחדש)
   if (w.askCust && $('#wzPhone')) $('#wzPhone').addEventListener('input', () => { if (!WZ || !WZ.askCust) return; Object.assign(WZ, { name: $('#wzName').value, phone: $('#wzPhone').value, place: $('#wzPlace').value, problem: $('#wzProb').value, askCust: null }); const pos = $('#wzPhone').selectionStart; renderWizard(); const f = $('#wzPhone'); f.focus(); try { f.setSelectionRange(pos, pos); } catch (e) {} }, { once: true });
 }
@@ -642,15 +651,16 @@ async function wizardClick(b) {
     }
     if (s === 'wz-use' || s === 'wz-new') { readWzForm(w); if (s === 'wz-use') w.useCust = w.askCust; else w.forceNew = true; w.askCust = null; const r = await openCard(w); if (r === 'ask') { renderWizard(); return; } if (!r) return; w.step = 1; renderAll(); renderWizard(); return; }
     if (s === 'wz-showfee') { w.showFee = true; renderWizard(); return; }
-    if (s === 'wz-later') { w.step = isOwner() ? 2 : 2; if (!isOwner()) { closeSheet(); renderAll(); toast('הכרטיס נפתח. התיאום מחכה בחלון "לקוחות בתהליך"'); return; } renderWizard(); return; }
-    if (s === 'wz-visit') {
-      const d = $('#wzDate').value, tm = $('#wzTime').value || '09:00'; if (!d) { toast('צריך לבחור תאריך'); return; }
-      const at = new Date(d + 'T' + tm); if (isNaN(at)) { toast('התאריך לא תקין'); return; }
+    if (s === 'wz-later') { w.step = isOwner() ? 2 : 2; if (!isOwner()) { closeSheet(); renderAll(); toast('הכרטיס נפתח. התיאום מחכה בחלון "לקוחות"'); return; } renderWizard(); return; }
+    if (s === 'wz-visit' || s === 'wz-visited') {
+      let at;   // "כבר הייתי בביקור": הביקור = עכשיו, ישר לשלב שאחרי הביקור (אור תיאם לבד, 08.11)
+      if (s === 'wz-visited') at = new Date();
+      else { const d = $('#wzDate').value, tm = $('#wzTime').value || '09:00'; if (!d) { toast('צריך לבחור תאריך'); return; } at = new Date(d + 'T' + tm); if (isNaN(at)) { toast('התאריך לא תקין'); return; } }
       const j = D.jobs.find((x) => x.id === w.jobId); const patch = { visit_at: at.toISOString() }; if (j && j.stage === 'lead') Object.assign(patch, { stage: 'visit', stage_changed_at: new Date().toISOString() });
       // מותנה: אם מכשיר אחר כבר קידם את העבודה או קבע ביקור אחר — לא דורסים (סבב-ביקורת לוח 2)
       if (!(await dbUpdate('jobs', w.jobId, patch, null, j ? { stage: j.stage, visit_at: j.visit_at || null } : null))) return; if (j) Object.assign(j, patch);
       const ljid = w.it.jid || (w.it.lead && w.it.lead.jid), l = ljid && D.leads.find((x) => x.jid === ljid); if (l && ['new', 'replied'].includes(l.status)) await setLeadStatus(l.jid, 'visit');
-      w.visitAt = patch.visit_at; w.step = 2; renderAll(); renderWizard(); return;
+      w.visitAt = patch.visit_at; if (s === 'wz-visited') w.showFee = true; w.step = 2; renderAll(); renderWizard(); return;
     }
     if (s === 'wz-fee') {
       const kind = (document.querySelector('#sheet [name=fee]:checked') || {}).value || 'none', amt = +String($('#wzAmt').value).replace(/[^\d.]/g, '');
@@ -661,7 +671,7 @@ async function wizardClick(b) {
       w.step = 3; renderAll(); renderWizard(); return;
     }
     if (s === 'wz-inv') { if (await dbUpdate('payments', w.payId, { invoice_issued: true })) { const p = D.payments.find((x) => x.id === w.payId); if (p) p.invoice_issued = true; toast('מעולה. הכל מסודר.'); closeSheet(); renderAll(); } return; }
-    if (s === 'wz-end') { closeSheet(); renderAll(); toast('נשמר. ' + (w.name || 'הלקוח') + ' בחלון "לקוחות בתהליך"'); return; }
+    if (s === 'wz-end') { closeSheet(); renderAll(); toast('נשמר. ' + (w.name || 'הלקוח') + ' בחלון "לקוחות"'); return; }
   } finally { BUSY = false; if (b.isConnected) b.disabled = false; }
 }
 // לקוח (קיים לפי טלפון או חדש) + עבודה. מקשר את הפנייה והשיחות.
