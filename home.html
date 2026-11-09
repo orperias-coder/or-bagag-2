@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3f6f2">
 <meta name="robots" content="noindex">
-<title>לוח הבית · אור וזוהרי</title>
+<title>לוח הבית · אור וזהרי</title>
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap">
 <style>
 /* לוח הבית (07.11.2026): חשבון הבית בפועלים, דרך Financy. אותה שפה כמו לוח העסק ("בית נעים"), בגוון ירוק-סגול
-   שאור ביקש ללוח הבית (01.11). רק אור וזוהרי (RLS בענן; לרון אין גישה). בהיר בלבד. */
+   שאור ביקש ללוח הבית (01.11). רק אור וזהרי (RLS בענן; לרון אין גישה). בהיר בלבד. */
 :root{--bg:#f3f6f2;--bg2:#f7f3fb;--ink:#26302a;--muted:#7b857e;--line:#e4ebe5;--line2:#d5dfd7;--gr:#3c9a6a;--gr-deep:#2a7350;--gr-soft:#e3f3ea;--lav:#7b68d9;--lav-soft:#ece8fb;--out:#c4553a;
   --spring:cubic-bezier(.34,1.5,.5,1);--soft:cubic-bezier(.22,1,.36,1);--puff:0 1px 2px rgba(30,60,40,.05),0 14px 34px -16px rgba(40,80,60,.22);color-scheme:light}
 html{background:var(--bg)}
@@ -87,7 +87,7 @@ body{margin:0;background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 75%) fix
 /* לוח הבית — קריאה בלבד. הנתונים מגיעים מהמק (home_bank.py, פעם ביום); הדף לא נוגע ב-Financy ואין בו מפתחות. */
 const SB_URL='https://wxnmujdcrqsgokzlptkh.supabase.co',SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
 const FX=window.HOME_FIXTURE||null, sb=FX?null:supabase.createClient(SB_URL,SB_ANON,{db:{schema:'app2'},auth:{persistSession:true,autoRefreshToken:true,storageKey:'ob2_auth'}});
-const OWNERS={'or.perias@gmail.com':'אור','zohariadar@gmail.com':'זוהרי'};
+const OWNERS={'or.perias@gmail.com':'אור','zohariadar@gmail.com':'זהרי'};
 const $=s=>document.querySelector(s), esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const shek=n=>(n<0?'−':'')+Math.abs(Math.round(+n||0)).toLocaleString('he-IL')+' ₪';
 const dm=k=>{const p=String(k||'').split('-');return p.length===3?+p[2]+'.'+ +p[1]:''};
@@ -108,7 +108,7 @@ function recurring(tx){   // אותו תיאור (בלי ספרות) ב-2 חוד
   $('#date').textContent=new Date().toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'});
   let d; try{d=await load()}catch(e){console.warn(e);return gate('לא הצלחתי לטעון','בדוק רשת ורענן.')}
   if(!d)return gate();
-  const me=OWNERS[String(d.email||'').toLowerCase()]; if(!me)return gate('הדף הזה רק לאור ולזוהרי','');
+  const me=OWNERS[String(d.email||'').toLowerCase()]; if(!me)return gate('הדף הזה רק לאור ולזהרי','');
   if(d.missing)return gate('חשבון הבית עוד לא מחובר','החיבור לבנק הפועלים מוכן במחשב של אור ומחכה לאישור שלו להפעלה.');
   $('#main').hidden=false;
   const h=new Date().getHours();$('#hello').textContent=(h<12?'בוקר טוב':h<17?'צהריים טובים':'ערב טוב')+', '+me+'. זה מצב חשבון הבית בפועלים.';
@@ -127,7 +127,7 @@ function recurring(tx){   // אותו תיאור (בלי ספרות) ב-2 חוד
   $('#txSum').textContent=tx.length?`${tx.length} תנועות מאז ${dm(tx[tx.length-1].booked)}`:'';
   const rec=recurring(tx);
   $('#rec').innerHTML=rec.map(r=>`<div class="r"><div class="t"><b>${esc(r.k)}</b><small>${r.months} חודשים · אחרון ${dm(r.last.booked)}</small></div><span class="a out">${shek(r.avg)}</span></div>`).join('')||'<div class="empty">עוד אין מספיק היסטוריה. החשבון חדש (מאוקטובר).</div>';
-  const todo=['להעביר את הוראות הקבע של הבית לחשבון בפועלים (המשימה הראשונה של זוהרי). כל הוראה שתעבור תופיע כאן ב"חוזר כל חודש".','לקבוע כמה כל אחד מעביר לבית כל חודש, ולסמן כאן כשזה נכנס.'];
+  const todo=['להעביר את הוראות הקבע של הבית לחשבון בפועלים (המשימה הראשונה של זהרי). כל הוראה שתעבור תופיע כאן ב"חוזר כל חודש".','לקבוע כמה כל אחד מעביר לבית כל חודש, ולסמן כאן כשזה נכנס.'];
   if(chk&&chk.connection_expiry)todo.push('החיבור לבנק בתוקף עד '+new Date(chk.connection_expiry).toLocaleDateString('he-IL')+'.');
   $('#todo').innerHTML=todo.map(t=>`<div><i></i><span>${esc(t)}</span></div>`).join('');
   const up=d.acc.reduce((m,a)=>a.updated_at>m?a.updated_at:m,'');$('#foot').textContent=up?'עודכן מהבנק: '+new Date(up).toLocaleString('he-IL',{weekday:'short',hour:'2-digit',minute:'2-digit'}):'';

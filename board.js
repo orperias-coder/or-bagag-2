@@ -11,7 +11,7 @@ const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelect
 const canHover = matchMedia('(hover:hover)').matches, calm = matchMedia('(prefers-reduced-motion:reduce)').matches;
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // מי מסתכל. owner = רואה כסף וחשבוניות. כל אחד אחר (רון, עובדים) — בלי כסף. (07.11, הוראת אור)
-const PEOPLE = { 'or.perias@gmail.com': { name: 'אור', role: 'owner', w: 'var(--or)' }, 'zohariadar@gmail.com': { name: 'זוהרי', role: 'owner', w: 'var(--zo)' } };
+const PEOPLE = { 'or.perias@gmail.com': { name: 'אור', role: 'owner', w: 'var(--or)' }, 'zohariadar@gmail.com': { name: 'זהרי', role: 'owner', w: 'var(--zo)' } };
 const D = { leads: [], tasks: [], jobs: [], customers: [], payments: [], calls: [], me: '', role: 'crew', email: '', callsOk: true };
 const isOwner = () => D.role === 'owner';
 let calDay = 'today', taskDay = 'today';
@@ -468,7 +468,9 @@ function itemBody(it) {
     if (j.problem) extra.push(`<p class="body">${esc(short(j.problem, 400))}</p>`);
     D.calls.filter((x) => x.customer_id && x.customer_id === j.customer_id).slice(0, 3).forEach((x) => extra.push(`<div style="border-top:1px solid var(--line);padding-top:10px"><span class="kind" style="--pc:#b0587d">שיחת טלפון</span>${callBlock(x)}</div>`));
     if (['lead', 'visit'].includes(j.stage)) acts.push('<button class="btn main" type="button" data-s="wizard">' + (j.stage === 'lead' ? 'לתאם ביקור' : j.visit_at && T(j.visit_at) < Date.now() ? 'הביקור היה: דמי ביקור וחשבונית' : 'פרטי הביקור') + '</button>');
-    acts.push(`<a class="btn" href="./">${j.stage === 'visit' && j.visit_at && T(j.visit_at) < Date.now() ? 'להכין הצעת מחיר באפליקציה' : 'לפתוח באפליקציה (הצעת מחיר, תמונות)'}</a>`);
+    if (isOwner()) acts.push(`<a class="btn${['quote', 'sent'].includes(it.tab) ? ' main' : ''}" href="offer.html?job=${encodeURIComponent(j.id)}">${it.tab === 'quote' ? 'להכין הצעת מחיר' : it.tab === 'sent' ? 'לפתוח את ההצעה' : 'הצעות מחיר'}</a>`);   // offer.html — כלי ההצעות של הלוח (09.11)
+    if (c && c.id) acts.push('<button class="btn" type="button" data-s="custedit">לערוך פרטי לקוח</button>');
+    acts.push('<a class="btn ghost" href="./">לפתוח באפליקציה (תמונות)</a>');
   } else if (it.src === 'call') { /* מטופל למעלה */ } else if (it.src === 'pay') {
     rows.push(['סכום', shek(it.amount)]); rows.push(['שולם', it.pay.paid_at ? dm(it.pay.paid_at) : '']); if (it.pay.method) rows.push(['אמצעי', it.pay.method]); if (it.pay.note) rows.push(['הערה', it.pay.note]);
     acts.push('<a class="btn" target="_blank" rel="noopener" href="https://app.greeninvoice.co.il/">לפתוח את מורנינג</a>');
@@ -550,6 +552,18 @@ $('#sheet').addEventListener('click', async (e) => {
     if (s === 'mktask') { const c = it.call; c.__task = c.__task || uuid(); const ok = await addTask(c.data.next + ' · ' + callWho(c), isDay(c.data.due) && c.data.due >= TODAY() ? c.data.due : TODAY(), c.__task); if (ok && (await setCallHandled(c.id, true))) { toast('נוספה משימה' + (c.data.due ? ' ל-' + dm(c.data.due) : ' להיום')); renderAll(); openItem(findItem(it.id) || it, SL); } return; }
     if (s === 'towa') { const t = inboxItems().find((x) => x.jid === it.call.wa_jid) || custItems().find((x) => x.jid === it.call.wa_jid); if (t) openItem(t, [t]); else toast('הפנייה בוואטסאפ כבר טופלה או סגורה'); return; }
     if (s === 'invoiced') { if (await dbUpdate('payments', it.pay.id, { invoice_issued: true })) { it.pay.invoice_issued = true; toast('סומן: חשבונית הוצאה', () => dbUpdate('payments', it.pay.id, { invoice_issued: false }).then(() => { it.pay.invoice_issued = false; renderAll(); })); await afterAction(it); } return; }
+    if (s === 'custedit') {   // פרטי לקוח מתוך הלוח (09.11, תחילת ניהול לקוחות)
+      const c = it.cust, box = $('#sheet .sacts');
+      box.innerHTML = `<div class="cedit"><label>שם<input id="ce-name" value="${esc(c.name || '')}"></label><label>טלפון<input id="ce-phone" inputmode="tel" value="${esc(c.phone || '')}"></label><label>מייל<input id="ce-mail" inputmode="email" dir="ltr" value="${esc(c.email || '')}"></label><label>כתובת<input id="ce-addr" value="${esc(c.address || '')}"></label><label>הערות<textarea id="ce-note" rows="2">${esc(c.notes || '')}</textarea></label><button class="btn main" type="button" data-s="custsave">לשמור</button></div>`;
+      $('#ce-name').focus(); return;
+    }
+    if (s === 'custsave') {
+      const c = it.cust, patch = { name: $('#ce-name').value.trim(), phone: $('#ce-phone').value.trim() || null, email: $('#ce-mail').value.trim() || null, address: $('#ce-addr').value.trim() || null, notes: $('#ce-note').value.trim() || null };
+      if (!patch.name) return toast('צריך שם');
+      if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) return toast('המייל לא נראה תקין');
+      if (await dbUpdate('customers', c.id, patch)) { const cc = D.customers.find((x) => x.id === c.id); if (cc) Object.assign(cc, patch); dirty(); renderAll(); toast('פרטי הלקוח נשמרו'); openItem(findItem(it.id) || it, SL); }
+      return;
+    }
     if (s === 'taskdone') { const t = it.task; if (await setTaskDone(t.id, !t.done_at)) { renderAll(); closeSheet(); } return; }
   } finally { BUSY = false; if (b.isConnected) b.disabled = false; }
 });
@@ -1087,7 +1101,7 @@ async function load() {
       arch((x) => sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,last_activity,scanned_at,customer_id' + x).is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }).order('jid'), 3000),
       all(() => sb.from('tasks').select('id,title,due,job_id,done_at,created_at').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 6000),
       arch((x) => sb.from('jobs').select('id,customer_id,title,stage,stage_changed_at,visit_at,quote_sent_at,problem,created_at,updated_at' + (owner ? ',price_agreed' : '') + x).is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 10000),
-      all(() => sb.from('customers').select('id,name,address,phone').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 20000),
+      all(() => sb.from('customers').select('id,name,address,phone,email,notes').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 20000),
       owner ? all(() => sb.from('payments').select('id,job_id,amount,paid_at,method,note,invoice_issued').is('deleted_at', null).order('paid_at', { ascending: false }).order('id'), 10000) : Promise.resolve({ data: [] }),
       !owner ? Promise.resolve({ data: [] }) : sb.from('calls').select('id,started_at,duration,contact,phone,wa_jid,kind,data,handled_at,handled_by,customer_id').is('deleted_at', null).order('started_at', { ascending: false }).limit(1000)]);
     for (const r of [l, t, j, c]) if (r.error) throw r.error;
