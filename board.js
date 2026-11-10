@@ -71,6 +71,8 @@ const callTime = (c) => T(c.started_at);
 const callIsLead = (c) => ['lead', 'unclear'].includes(c.kind);
 const callOpen = (c) => !c.handled_at && !c.customer_id && !c.deleted_at;
 
+// כל השיחות של אדם (לפי הצלבה לוואטסאפ או לפי טלפון), החדשה ראשונה — לכרטיס בכל שלב
+const callsOf = (jid, phone) => { const ph = normPhone(phone); return D.calls.filter((c) => !c.deleted_at && c.kind !== 'private' && ((jid && c.wa_jid === jid) || (ph && normPhone(c.phone) === ph))).sort((x, y) => callTime(y) - callTime(x)); };
 function inboxItems() { return memo('inbox', inboxItems0); }
 function inboxItems0() {
   const out = [], byJid = {};
@@ -82,13 +84,17 @@ function inboxItems0() {
     if (!it.live) return;   // שבוע בלי תזוזה → ארכיון
     byJid[l.jid] = it; out.push(it);
   });
-  // שיחה של מי שיש לו פנייה בוואטסאפ מצטרפת אליה (כל סוג שיחה של לקוח/ליד); שיחת-ליד בלי וואטסאפ — פנייה משלה
-  D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && callOpen(c) && recent(callTime(c), LIVE_DAYS)).forEach((c) => {
-    const host = c.wa_jid && byJid[c.wa_jid];
-    if (!host && !callIsLead(c)) return;
+  // שיחה של מי שיש לו פנייה בוואטסאפ מצטרפת אליה (לפי הצלבה או לפי טלפון); שיחות-ליד בלי וואטסאפ — פנייה אחת לכל אדם
+  // (09.11, אור: "וואטסאפ ושיחות מתומללות חייבים להיות תחת אותו כרטיס"; אברמי הופיע כ-3 פניות נפרדות)
+  const byPh = {}; out.forEach((it) => { const ph = normPhone(it.phone); if (ph) byPh[ph] = it; });
+  const solo = {};
+  D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && callOpen(c) && recent(callTime(c), LIVE_DAYS)).sort((x, y) => callTime(y) - callTime(x)).forEach((c) => {
+    const host = (c.wa_jid && byJid[c.wa_jid]) || byPh[normPhone(c.phone)];
     if (host) { host.calls.push(c); host.at = Math.max(host.at, callTime(c)); if (c.data && c.data.urgent) host.urgent = true; return; }
-    const a = c.data || {};
-    out.push({ id: 'C' + c.id, src: 'call', call: c, calls: [c], tab: 'check', name: callWho(c), phone: c.phone, place: a.place || '', what: a.topic || a.summary || '', at: callTime(c), waiting: true, urgent: !!a.urgent });
+    if (!callIsLead(c)) return;
+    const key = normPhone(c.phone) || 'n:' + callWho(c), a = c.data || {};
+    if (solo[key]) { const g = solo[key]; g.calls.push(c); if (a.urgent) g.urgent = true; if (!g.place && a.place) g.place = a.place; return; }
+    out.push(solo[key] = { id: 'C' + c.id, src: 'call', call: c, calls: [c], tab: 'check', name: callWho(c), phone: c.phone, place: a.place || '', what: a.topic || a.summary || '', at: callTime(c), waiting: true, urgent: !!a.urgent });
   });
   return out.sort((a, b) => (b.urgent - a.urgent) || b.at - a.at);
 }
@@ -130,7 +136,7 @@ function custItems0() {
   const jobCust = new Set(D.jobs.map((j) => j.customer_id));
   D.leads.filter((l) => leadOpen(l) && isJob(l) && !(l.customer_id && jobCust.has(l.customer_id))).forEach((l) => {
     const st = CSTAGES.find((s) => s.wa.includes(l.status)); if (!st) return;
-    out.push(liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)) }, l));
+    out.push(liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: callsOf(l.jid, leadPhone(l)), tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)) }, l));
   });
   return out.sort((a, b) => b.at - a.at);
 }
@@ -449,11 +455,13 @@ function itemBody(it) {
     const l = it.lead;
     if (it.phone) rows.push(['טלפון', fmtPhone(it.phone)]); if (it.place) rows.push(['איפה', it.place]);
     if (l) { const s = { new: 'חדש', replied: 'חזרנו אליו', visit: 'קבענו ביקור', quote_sent: 'נשלחה הצעה', approved: 'אישר' }[l.status]; if (s) rows.push(['שלב', s]); if (ts(l)) rows.push(['וואטסאפ אחרון', ago(ts(l))]); }
+    const both = l && it.calls && it.calls.length;
+    if (both) extra.push('<div class="srch wa">וואטסאפ</div>');
     if (l && l.summary) extra.push(`<p class="body">${esc(l.summary)}</p>`);
     if (l && Array.isArray(l.media) && l.media.length) extra.push(`<div class="phs" data-media="${esc(l.jid)}">${l.media.slice(0, 8).map(() => '<span class="ph0"></span>').join('')}</div>`);
     const msgs = ((l && l.data && l.data.messages) || []).filter((m) => m && m.text && !/^\s*\[[^\]]*\]\s*$/.test(m.text)).slice(-4);   // בלי "[תמונה]"/"[ללא טקסט]" — התמונות מוצגות למעלה
     if (msgs.length) extra.push(`<div class="chat">${msgs.map((m) => `<div class="b ${m.me ? 'me' : ''}">${esc(short(m.text, 260))}</div>`).join('')}</div>`);
-    (it.calls || []).forEach((c) => extra.push(`<div style="border-top:1px solid var(--line);padding-top:10px"><span class="kind" style="--pc:#b0587d">שיחת טלפון</span>${callBlock(c)}</div>`));
+    if (it.calls && it.calls.length) extra.push(`<div class="srch call">${it.calls.length > 1 ? it.calls.length + ' שיחות טלפון' : 'שיחת טלפון'}</div>` + it.calls.slice(0, 6).map((c) => `<div class="callb">${callBlock(c)}</div>`).join(''));
     const inCust = it.tab && CSTAGES.some((s) => s.id === it.tab);
     if (!inCust) {
       acts.push('<button class="btn main" type="button" data-s="wizard">לטפל בפנייה: לפתוח כרטיס ולתאם</button>');
@@ -545,10 +553,15 @@ $('#sheet').addEventListener('click', async (e) => {
     if (s === 'replied') { const prev = (D.leads.find((x) => x.jid === it.jid) || it.lead).status; if (await setLeadStatus(it.jid, 'replied')) { toast(it.name + ' עבר ל"חזרנו אליהם"', () => setLeadStatus(it.jid, prev).then(() => renderAll())); await afterAction(it); } return; }
     if (s === 'skip') {
       if (it.src === 'wa') { const prev = (D.leads.find((x) => x.jid === it.jid) || it.lead).status; if (await setLeadStatus(it.jid, 'skip')) { const cs = it.calls || []; for (const c of cs) await setCallHandled(c.id, true); toast(it.name + ' סומן "לא רלוונטי"', async () => { await setLeadStatus(it.jid, prev, 'skip'); for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } }
-      else if (it.src === 'call') { if (await setCallHandled(it.call.id, true, 'לא רלוונטי')) { toast('השיחה סומנה "לא רלוונטי"', () => setCallHandled(it.call.id, false).then(() => renderAll())); await afterAction(it); } }
+      else if (it.src === 'call') { const cs = (it.calls || [it.call]).filter(callOpen); let ok = true; for (const c of cs) ok = (await setCallHandled(c.id, true, 'לא רלוונטי')) && ok; if (ok) { toast(cs.length > 1 ? cs.length + ' שיחות סומנו "לא רלוונטי"' : 'השיחה סומנה "לא רלוונטי"', async () => { for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } }
       return;
     }
-    if (s === 'handled') { const c = it.call || (it.calls && it.calls[0]); const was = callOpen(c); if (await setCallHandled(c.id, was)) { toast(was ? 'השיחה סומנה שטופלה' : 'השיחה חזרה ללא-טופל', () => setCallHandled(c.id, !was).then(() => renderAll())); was && it.calls ? await afterAction(it) : (renderAll(), openItem(findItem(it.id) || it, SL)); } return; }
+    if (s === 'handled') {
+      if (it.calls && it.calls.length > 1) {   // פנייה מקובצת: "טופל" חל על כל השיחות הפתוחות של האדם
+        const cs = it.calls.filter(callOpen); let ok = true; for (const c of cs) ok = (await setCallHandled(c.id, true)) && ok;
+        if (ok) { toast(cs.length + ' שיחות סומנו שטופלו', async () => { for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } return;
+      }
+      const c = it.call || (it.calls && it.calls[0]); const was = callOpen(c); if (await setCallHandled(c.id, was)) { toast(was ? 'השיחה סומנה שטופלה' : 'השיחה חזרה ללא-טופל', () => setCallHandled(c.id, !was).then(() => renderAll())); was && it.calls ? await afterAction(it) : (renderAll(), openItem(findItem(it.id) || it, SL)); } return; }
     if (s === 'mktask') { const c = it.call; c.__task = c.__task || uuid(); const ok = await addTask(c.data.next + ' · ' + callWho(c), isDay(c.data.due) && c.data.due >= TODAY() ? c.data.due : TODAY(), c.__task); if (ok && (await setCallHandled(c.id, true))) { toast('נוספה משימה' + (c.data.due ? ' ל-' + dm(c.data.due) : ' להיום')); renderAll(); openItem(findItem(it.id) || it, SL); } return; }
     if (s === 'towa') { const t = inboxItems().find((x) => x.jid === it.call.wa_jid) || custItems().find((x) => x.jid === it.call.wa_jid); if (t) openItem(t, [t]); else toast('הפנייה בוואטסאפ כבר טופלה או סגורה'); return; }
     if (s === 'invoiced') { if (await dbUpdate('payments', it.pay.id, { invoice_issued: true })) { it.pay.invoice_issued = true; toast('סומן: חשבונית הוצאה', () => dbUpdate('payments', it.pay.id, { invoice_issued: false }).then(() => { it.pay.invoice_issued = false; renderAll(); })); await afterAction(it); } return; }
