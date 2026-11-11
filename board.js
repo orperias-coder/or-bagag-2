@@ -26,6 +26,36 @@ const dm = (k) => { const p = String(k || '').split('-'); return p.length === 3 
 const dayHe = (k) => k === TODAY() ? 'היום' : k === TOM() ? 'מחר' : k === dayOff(-1) ? 'אתמול' : new Date(k + 'T12:00').toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' });
 const ts = (l) => l.last_activity ? new Date(l.last_activity).getTime() : 0;
 const T = (iso) => iso ? new Date(iso).getTime() : 0;
+// מי כתב אחרון בוואטסאפ. בענן אין לזה עמודה (last_activity = זמן הסריקה): לוקחים מההודעות ב-data.messages (at בשניות, me = אנחנו).
+const msgAt = (m) => { const a = +(m && m.at) || 0; return a > 1e11 ? a : a * 1000; };
+const lastMsg = (l, me) => ((l.data && l.data.messages) || []).reduce((mx, m) => (m && !!m.me === me ? Math.max(mx, msgAt(m)) : mx), 0);
+// מתי הלקוח כתב לאחרונה. כרטיס סגור שהסריקה פתחה מחדש (new + scan): status_at הוא זמן ההודעה שלו.
+const wroteAt = (l) => Math.max(lastMsg(l, false), l.status === 'new' && l.status_by === 'scan' ? T(l.status_at) : 0);
+// מתי טיפלנו לאחרונה: ענינו בוואטסאפ, או שאדם לחץ על שלב ("חזרתי אליו" וכו'). שינוי של הסריקה לא נחשב.
+const seenAt = (l) => Math.max(lastMsg(l, true), l.status_by === 'scan' ? 0 : T(l.status_at));
+/* פינג-פונג (11.11, אור אישר את הדגם): אצל מי הכדור. לפי מי שכתב אחרון בוואטסאפ; לחיצה של אדם גוברת אם היא האירוע האחרון.
+   רק תצוגה — השלב בענן לא משתנה לבד. לקוח שלא ענה NUDGE_DAYS ימים חוזר ל"הכדור אצלי" עם "להזכיר לו?". */
+const NUDGE_DAYS = 3;
+const humanAt = (l) => ((l.status_by ? l.status_by !== 'scan' : l.status !== 'new') ? T(l.status_at) : 0);
+function ballOf(l) {
+  const inAt = lastMsg(l, false), outAt = lastMsg(l, true), h = humanAt(l), m = Math.max(inAt, outAt);
+  let mine, since;
+  if (h && h >= m) { mine = l.status === 'new'; since = h; }            // לחיצה של אדם היא האירוע האחרון
+  else if (m) { mine = inAt > outAt; since = m; }                        // מי כתב אחרון בוואטסאפ
+  else { mine = l.status === 'new'; since = mine ? ts(l) || T(l.status_at) : T(l.status_at) || ts(l); }   // אין זמני הודעות
+  const nudge = !mine && !!since && Date.now() - since > NUDGE_DAYS * 864e5;
+  return { mine: mine || nudge, since, nudge, inAt, outAt };
+}
+const leadSnap = (l) => ({ status: l.status, status_by: l.status_by || (l.status === 'new' ? 'scan' : 'phone'), status_at: l.status_at || null });
+const dmT = (t) => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1); };
+const secMs = (v) => { const n = +v; return n ? (n > 1e11 ? n : n * 1000) : T(v); };   // first_seen נשמר בשניות
+// מתי האדם נכנס אלינו לראשונה: הפעם הראשונה שהסריקה ראתה אותו, ההודעה הכי ישנה שיש, או השיחה הראשונה
+function enteredAt(it) {
+  const l = it.lead, a = [];
+  if (l) { const f = secMs(l.data && l.data.first_seen); if (f) a.push(f); ((l.data && l.data.messages) || []).forEach((m) => { const t = msgAt(m); if (t) a.push(t); }); }
+  (it.calls || []).forEach((c) => { const t = T(c.started_at); if (t) a.push(t); });
+  return a.length ? Math.min(...a) : (l ? ts(l) : it.at) || 0;
+}
 function ago(t) {
   if (!t) return ''; const m = Math.floor((Date.now() - t) / 60000);
   if (m < 60) return 'לפני ' + Math.max(1, m) + ' דק׳'; const h = Math.floor(m / 60); if (h < 24) return h === 1 ? 'לפני שעה' : h === 2 ? 'לפני שעתיים' : 'לפני ' + h + ' שעות';
@@ -53,7 +83,10 @@ function idx() {
   if (IDX) return IDX;
   const cust = new Map(D.customers.map((c) => [c.id, c])), paid = new Map();
   D.payments.forEach((p) => { if (!p.deleted_at) paid.set(p.job_id, (paid.get(p.job_id) || 0) + (+p.amount || 0)); });
-  return (IDX = { cust, paid });
+  // לכל לקוח מקושר: מתי כתב לאחרונה בוואטסאפ (at, ובאיזו פנייה) ומתי טיפלנו (seen) — בשביל הסימון "כתב שוב"
+  const wrote = new Map();
+  D.leads.forEach((l) => { if (!l.customer_id) return; const w = wrote.get(l.customer_id) || { at: 0, seen: 0, jid: l.jid }, a = wroteAt(l); if (a > w.at) { w.at = a; w.jid = l.jid; } w.seen = Math.max(w.seen, seenAt(l)); wrote.set(l.customer_id, w); });
+  return (IDX = { cust, paid, wrote });
 }
 function dirty() { IDX = null; MEMO = {}; }
 const memo = (k, f) => (k in MEMO ? MEMO[k] : (MEMO[k] = f()));
@@ -77,15 +110,28 @@ function inboxItems() { return memo('inbox', inboxItems0); }
 function inboxItems0() {
   const out = [], byJid = {};
   D.leads.filter((l) => isJob(l) && leadOpen(l) && !l.customer_id && ['new', 'replied'].includes(l.status)).forEach((l) => {
-    const it = liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: [], tab: l.status === 'new' ? 'check' : 'replied', name: leadName(l), phone: leadPhone(l),
-      place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: ts(l), waiting: !!(l.data && l.data.awaiting && l.status === 'new'),
+    const b = ballOf(l), wait = b.mine && !b.nudge;   // wait = הלקוח מחכה לתשובה מאיתנו
+    const it = liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: [], tab: b.mine ? 'check' : 'replied', ball: b, ask: askOf(l), name: leadName(l), phone: leadPhone(l),
+      place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: ts(l), waiting: wait,
       // "דחוף" רק כשבאמת: ליד חם שמחכה לנו יותר מיממה (ביקורת 07.11: "דחוף על כל ליד = לא אומר כלום")
-      urgent: ['hot', 'to_close'].includes(l.data && l.data.band) && !!(l.data && l.data.awaiting) && l.status === 'new' && Date.now() - ts(l) > 864e5 }, l, Math.max(ts(l), T(l.status_at)));
+      urgent: ['hot', 'to_close'].includes(l.data && l.data.band) && wait && Date.now() - b.since > 864e5 }, l, Math.max(ts(l), T(l.status_at)));
     if (!it.live) return;   // שבוע בלי תזוזה → ארכיון
     byJid[l.jid] = it; out.push(it);
   });
+  // לקוח שכבר מקושר וכתב שוב בוואטסאפ, ואין לו עבודה פתוחה בלוח → חוזר ל"לבדוק" עם סימון "כתב שוב" (10.11).
+  // רק תצוגה: השלב בענן לא משתנה לבד. יורד מכאן כשעונים לו בוואטסאפ, כשלוחצים "חזרתי אליו", או כשפותחים לו עבודה.
+  const openCust = new Set(), jobsAt = new Map();
+  D.jobs.forEach((j) => { if (!['paid', 'lost'].includes(j.stage)) openCust.add(j.customer_id); jobsAt.set(j.customer_id, Math.max(jobsAt.get(j.customer_id) || 0, T(j.stage_changed_at), T(j.created_at))); });
+  D.leads.filter((l) => l.customer_id && leadOpen(l) && !openCust.has(l.customer_id) && (jobsAt.has(l.customer_id) || !isJob(l) || !CSTAGES.some((s) => s.wa.includes(l.status)))).forEach((l) => {
+    const w = wroteAt(l); if (!(w > Math.max(seenAt(l), jobsAt.get(l.customer_id) || 0))) return;
+    const c = custOf(l.customer_id);
+    const it = liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: [], tab: 'check', name: (c && c.name) || leadName(l), phone: leadPhone(l) || (c && c.phone) || '',
+      place: l.data && (l.data.address || l.data.area) || (c && c.address) || '', what: l.summary || '', at: w, waiting: true, urgent: false, again: w }, l, w);
+    if (!it.live) return;
+    byJid[l.jid] = it; out.push(it);
+  });
   // שיחה של מי שיש לו פנייה בוואטסאפ מצטרפת אליה (לפי הצלבה או לפי טלפון); שיחות-ליד בלי וואטסאפ — פנייה אחת לכל אדם
-  // (09.11, אור: "וואטסאפ ושיחות מתומללות חייבים להיות תחת אותו כרטיס"; אברמי הופיע כ-3 פניות נפרדות)
+  // (09.11, אור: "וואטסאפ ושיחות מתומללות חייבים להיות תחת אותו כרטיס"; אותו אדם הופיע כ-3 פניות נפרדות)
   const byPh = {}; out.forEach((it) => { const ph = normPhone(it.phone); if (ph) byPh[ph] = it; });
   const solo = {};
   D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && callOpen(c) && recent(callTime(c), LIVE_DAYS)).sort((x, y) => callTime(y) - callTime(x)).forEach((c) => {
@@ -96,9 +142,50 @@ function inboxItems0() {
     if (solo[key]) { const g = solo[key]; g.calls.push(c); if (a.urgent) g.urgent = true; if (!g.place && a.place) g.place = a.place; return; }
     out.push(solo[key] = { id: 'C' + c.id, src: 'call', call: c, calls: [c], tab: 'check', name: callWho(c), phone: c.phone, place: a.place || '', what: a.topic || a.summary || '', at: callTime(c), waiting: true, urgent: !!a.urgent });
   });
-  return out.sort((a, b) => (b.urgent - a.urgent) || b.at - a.at);
+  const nd = (x) => (x.ball && x.ball.nudge ? 1 : 0);   // "להזכיר לו?" — בסוף הרשימה, אחרי מי שמחכה לנו
+  return out.sort((a, b) => (b.urgent - a.urgent) || nd(a) - nd(b) || b.at - a.at);
 }
-const ITABS = [{ id: 'check', name: 'לבדוק', hint: 'פניות חדשות', c: '#2a9a63' }, { id: 'replied', name: 'מחכים ללקוח', hint: 'חזרנו אליהם, מחכים לתשובה מהם', c: '#6f9f3a' }];
+// שמות פנימיים נשארו (check = הכדור אצלי, replied = מחכה ללקוח); "טופל" = מה שנסגר בשבוע האחרון, רשימה נפרדת (doneItems)
+const ITABS = [{ id: 'check', name: 'הכדור אצלי', hint: 'כאן מי שמחכה לתשובה ממך', c: '#2a9a63' }, { id: 'replied', name: 'מחכה ללקוח', hint: 'כאן מי שענינו לו, והתור שלו', c: '#7b68d9' },
+  { id: 'done', name: 'טופל', hint: 'מה שנסגר בשבוע האחרון נשאר כאן, ואפשר להחזיר בלחיצה', c: '#857d98' }];
+const mineItems = () => inboxItems().filter((x) => x.tab === 'check' && !cooling(x));   // המונה האחד של "הכדור אצלי": לשונית, תפריט, אריח וברכה
+// הצעה של הסריקה ("נשלחה הצעה?") — רק הצעה: עוברים שלב רק בלחיצה. "להשאיר כאן" נזכר במכשיר.
+const ASK_KEY = 'ob2_ask_no';
+function askNo() { try { return JSON.parse(localStorage.getItem(ASK_KEY) || '[]'); } catch (e) { return []; } }
+function askOf(l) {
+  const a = l.data && l.data.ask; if (a !== 'quote_sent' || !['new', 'replied'].includes(l.status)) return null;
+  const key = l.jid + '|' + (l.data.ask_at || ''); return askNo().includes(key) ? null : { ask: a, key };
+}
+/* "טופל": לאן הולך מה שסוגרים (אור, 10.11: "לא ברור לאן זה הולך אם אני סוגר את זה"). שבוע אחורה, אדם אחד = שורה אחת. שום דבר לא נמחק. */
+const DONE_DAYS = 7;
+function doneItems() { return memo('done', doneItems0); }
+function doneItems0() {
+  const from = Date.now() - DONE_DAYS * 864e5, out = [], open = new Set(), byPh = {}, byJid = {};
+  inboxItems().forEach((x) => { open.add(x.id); const p = normPhone(x.phone); if (p) open.add('p' + p); });
+  const jobAt = new Map(); D.jobs.forEach((j) => jobAt.set(j.customer_id, Math.max(jobAt.get(j.customer_id) || 0, T(j.created_at))));
+  D.leads.filter(isJob).forEach((l) => {
+    const h = humanAt(l), ja = l.customer_id ? jobAt.get(l.customer_id) || 0 : 0; let d = null;
+    if (l.status === 'skip' && T(l.status_at) > from) d = { whyHe: 'לא רלוונטי', closedAt: T(l.status_at), back: l.customer_id ? null : 'skip' };
+    else if (D.archOk !== false && !l.customer_id && ['new', 'replied'].includes(l.status) && T(l.archived_at) > from && manualArch(l, Math.max(ts(l), T(l.status_at)))) d = { whyHe: 'הועבר לארכיון', closedAt: T(l.archived_at), back: 'arch' };
+    else if (leadOpen(l) && ja > from) d = { whyHe: 'עבר ללקוחות', closedAt: ja, go: true };
+    else if (['visit', 'quote_sent', 'approved'].includes(l.status) && h > from) d = { whyHe: 'עבר ללקוחות', closedAt: h, go: true };
+    else if (l.status === 'done' && h > from) d = { whyHe: 'נסגר', closedAt: h };
+    if (!d || open.has('W' + l.jid)) return; const ph = normPhone(leadPhone(l)); if (ph && open.has('p' + ph)) return;
+    const it = Object.assign({ id: 'DW' + l.jid, src: 'wa', tab: 'done', jid: l.jid, lead: l, rec: l, calls: [], name: (l.customer_id && custOf(l.customer_id) || {}).name || leadName(l), phone: leadPhone(l),
+      place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: d.closedAt }, d);
+    out.push(it); byJid[l.jid] = it; if (ph) byPh[ph] = it;
+  });
+  D.calls.filter((c) => ['lead', 'unclear', 'customer'].includes(c.kind) && !c.deleted_at && T(c.handled_at) > from).sort((x, y) => callTime(y) - callTime(x)).forEach((c) => {
+    const ph = normPhone(c.phone), key = ph || 'n:' + callWho(c), host = (c.wa_jid && byJid[c.wa_jid]) || byPh[key];
+    if (host) { host.calls.push(c); return; }
+    if (!callIsLead(c)) return;   // שיחת "לקוח" בלי פנייה סגורה — לא שורה משלה
+    if ((c.wa_jid && open.has('W' + c.wa_jid)) || (ph && open.has('p' + ph))) return;
+    const a = c.data || {}, nope = /^לא רלוונטי/.test(c.handled_by || '');
+    out.push(byPh[key] = { id: 'DC' + c.id, src: 'call', tab: 'done', call: c, calls: [c], name: callWho(c), phone: c.phone, place: a.place || '', what: a.topic || a.summary || '', at: T(c.handled_at), closedAt: T(c.handled_at),
+      whyHe: c.customer_id ? 'עבר ללקוחות' : nope ? 'לא רלוונטי' : 'טופל', go: !!c.customer_id, back: c.customer_id || !recent(callTime(c), LIVE_DAYS) ? null : 'call' });
+  });
+  return out.sort((a, b) => b.closedAt - a.closedAt);
+}
 
 /* ---------- לקוחות בתהליך: עבודות באפליקציה + לידים מוואטסאפ שכבר התקדמו ---------- */
 /* ---------- חיים של שבוע + ארכיון (אור אישר את המוקאפ 08.11): במסך הראשי רק מה שזז השבוע ---------- */
@@ -127,16 +214,27 @@ const CSTAGES = [
 const jobTouch = (j) => Math.max(T(j.stage_changed_at), T(j.visit_at)) || T(j.created_at);
 function custItems() { return memo('cust', custItems0); }
 function custItems0() {
-  const out = [];
-  D.jobs.filter((j) => !['paid', 'lost'].includes(j.stage)).forEach((j) => {
-    let st = CSTAGES.find((s) => s.jobs.includes(j.stage)); if (!st) return; const c = custOf(j.customer_id);
+  const out = [], open = D.jobs.filter((j) => !['paid', 'lost'].includes(j.stage) && CSTAGES.some((s) => s.jobs.includes(j.stage)));
+  // לקוח מקושר שכתב שוב בוואטסאפ (10.11): העבודה הפתוחה האחרונה שלו חוזרת ללוח (גם אם התקררה או ירדה לארכיון) עם סימון "כתב שוב". השלב לא משתנה לבד.
+  const rep = new Map(); open.forEach((j) => { const r = rep.get(j.customer_id); if (!r || jobTouch(j) > jobTouch(r)) rep.set(j.customer_id, j); });
+  open.forEach((j) => {
+    let st = CSTAGES.find((s) => s.jobs.includes(j.stage)); const c = custOf(j.customer_id);
     if (j.stage === 'visit' && j.visit_at && T(j.visit_at) < Date.now() - 2 * 3600e3) st = CSTAGES.find((s) => s.id === 'quote');   // הביקור כבר היה
-    out.push(liveMark({ id: 'J' + j.id, src: 'job', job: j, cust: c, tab: st.id, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j) }, j));
+    const it = { id: 'J' + j.id, src: 'job', job: j, cust: c, tab: st.id, name: jobName(j), phone: c && c.phone, place: c && c.address || '', what: j.problem || j.title || '', at: jobTouch(j) };
+    const w = rep.get(j.customer_id) === j && idx().wrote.get(j.customer_id); let touch = it.at;
+    if (w && w.at) { touch = Math.max(touch, w.at); if (w.at > Math.max(T(j.stage_changed_at), T(j.created_at), w.seen)) { it.again = w.at; it.againJid = w.jid; it.at = Math.max(it.at, w.at); } }
+    liveMark(it, j, touch);
+    // אושר / בביצוע: לא יורדים מהלוח בגלל הזמן (10.11: עבודות שאושרו נעלמו אחרי שבוע). רק מי שהועבר ידנית לארכיון נשאר שם.
+    if (['approved', 'doing'].includes(j.stage)) { it.live = !manualArch(j, it.touch); it.cool = false; }
+    out.push(it);
   });
   const jobCust = new Set(D.jobs.map((j) => j.customer_id));
   D.leads.filter((l) => leadOpen(l) && isJob(l) && !(l.customer_id && jobCust.has(l.customer_id))).forEach((l) => {
     const st = CSTAGES.find((s) => s.wa.includes(l.status)); if (!st) return;
-    out.push(liveMark({ id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: callsOf(l.jid, leadPhone(l)), tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)) }, l));
+    const it = { id: 'W' + l.jid, src: 'wa', jid: l.jid, lead: l, calls: callsOf(l.jid, leadPhone(l)), tab: st.id, name: leadName(l), phone: leadPhone(l), place: l.data && (l.data.address || l.data.area) || '', what: l.summary || '', at: Math.max(ts(l), T(l.status_at)) };
+    const w = l.customer_id ? wroteAt(l) : 0; let touch = it.at;
+    if (w) { touch = Math.max(touch, w); if (w > seenAt(l)) { it.again = w; it.at = Math.max(it.at, w); } }
+    out.push(liveMark(it, l, touch));
   });
   return out.sort((a, b) => b.at - a.at);
 }
@@ -196,7 +294,7 @@ function buildAgenda() {
   out.forEach((a) => {
     const r = st[a.id]; a.done = !!r;
     // ליד שנפתח מחדש אחרי הווי (לקוח כתב שוב / מכשיר אחר) — חוזר לרשימה, לא נשאר מוסתר עד חצות
-    if (r && a.kind === 'lead') { const l = D.leads.find((x) => x.jid === a.jid); if (l && l.status === 'new' && T(l.status_at) > (r.t0 || 0)) { a.done = false; } }
+    if (r && a.kind === 'lead') { const l = D.leads.find((x) => x.jid === a.jid); const b = l && ballOf(l); if (b && b.mine && !b.nudge && b.since > (r.t0 || 0)) { a.done = false; } }
   });
   return out;
 }
@@ -232,12 +330,13 @@ async function tickAgenda2(a) {
   const st = doneStore();
   if (a.done) {
     const prev = st[a.id]; delete st[a.id]; doneSave(st);
-    if (prev && prev.kind === 'lead' && prev.prevStatus) await setLeadStatus(prev.jid, prev.prevStatus, 'replied');   // רק אם עדיין "חזרנו" — לא דורסים התקדמות שקרתה בינתיים
+    if (prev && prev.kind === 'lead' && prev.snap) await leadRestore(prev.jid, prev.snap, 'replied');   // מחזירים בדיוק למה שהיה (גם ממי ומתי) — רק אם עדיין "מחכה ללקוח", לא דורסים התקדמות שקרתה בינתיים
+    else if (prev && prev.kind === 'lead' && prev.prevStatus) await setLeadStatus(prev.jid, prev.prevStatus, 'replied');
     if (prev && prev.kind === 'task') await setTaskDone(prev.tid, false);
     if (prev && prev.kind === 'call') await setCallHandled(prev.cid, false);
   } else {
     const rec = { id: a.id, kind: a.kind, jid: a.jid, tid: a.tid, cid: a.cid, ref: a.ref, u: a.u, t: a.t, y: a.y, sec: a.sec, at: a.at };
-    if (a.kind === 'lead') { const l = D.leads.find((x) => x.jid === a.jid); rec.prevStatus = l && l.status; if (!(await setLeadStatus(a.jid, 'replied', l && l.status))) { renderAll(); return false; } }
+    if (a.kind === 'lead') { const l = D.leads.find((x) => x.jid === a.jid); rec.prevStatus = l && l.status; rec.snap = l && leadSnap(l); if (!(await setLeadStatus(a.jid, 'replied', l && l.status))) { renderAll(); return false; } }
     if (a.kind === 'task' && !(await setTaskDone(a.tid, true))) { renderAll(); return false; }
     if (a.kind === 'call' && !(await setCallHandled(a.cid, true))) { renderAll(); return false; }
     rec.t0 = Date.now(); st[a.id] = rec; doneSave(st);
@@ -247,7 +346,7 @@ async function tickAgenda2(a) {
 }
 function tickWithToast(a) {
   const was = a.done;
-  return tickAgenda(a).then((ok) => { if (ok && !was) toast('סומן וי: ' + a.t + (a.kind === 'lead' ? ' (עבר ל"חזרנו אליהם")' : ''), () => { const b = AG.find((x) => x.id === a.id); if (b) tickAgenda(b); }); });
+  return tickAgenda(a).then((ok) => { if (ok && !was) toast('סומן וי: ' + a.t + (a.kind === 'lead' ? ' (עבר ל״מחכה ללקוח״)' : ''), () => { const b = AG.find((x) => x.id === a.id); if (b) tickAgenda(b); }); });
 }
 $('#agenda').addEventListener('click', (e) => {
   const ck = e.target.closest('[data-agchk]');
@@ -277,54 +376,71 @@ function rowHtml(it, extraRight) {
   const icons = it.src === 'wa' && it.calls && it.calls.length ? srcIc('wa') + srcIc('call') : srcIc(it.src);
   return `<div class="lr ${CUR && CUR.id === it.id ? 'sel' : ''}" data-row="${esc(it.id)}" role="button" tabindex="0" aria-label="${esc(it.name)}, לפתוח פרטים">
     <span style="display:flex;gap:3px">${icons}</span>
-    <div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}${it.urgent ? '<span class="urg">דחוף</span>' : ''}</span><span class="sm">${esc(it.what || '')}</span></div>
+    <div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}${it.urgent ? '<span class="urg">דחוף</span>' : ''}</span><span class="sm">${it.again ? `<span class="again">כתב שוב · ${ago(it.again)}</span>` : ''}${it.ball && it.ball.nudge ? `<span class="again nudge">להזכיר לו? · ${daysTxt(it.ball.since)} בלי תשובה</span>` : ''}${it.ask ? '<span class="again askc">נשלחה הצעה?</span>' : ''}${it.whyHe ? `<span class="again whyc">${esc(it.whyHe)}</span>` : ''}${esc(it.what || '')}</span></div>
     <span class="ag ${it.late ? 'late' : ''}">${extraRight != null ? extraRight : ago(it.at)}</span>${waHref(it.phone) ? `<a class="rwa" href="${waHref(it.phone)}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(it.name)}" title="לפתוח וואטסאפ"><svg viewBox="0 0 24 24">${SRC.wa.svg}</svg></a>` : '<span></span>'}${ARR}</div>`;
 }
 function tabsHtml(tabs, cur, counts) {
   return tabs.map((s) => `<button type="button" class="ltab" role="tab" data-tab="${s.id}" style="--c:${s.c}" aria-selected="${s.id === cur}"><i></i>${s.name} <b>${counts[s.id] || 0}</b></button>`).join('');
 }
+// הטור השמאלי בשורת פנייה: מתי נכנס, ומה קרה אחרון (מחכה לנו / ענינו / נסגר)
+function inboxRight(it) {
+  if (it.tab === 'done') return `<b>נסגר ${dmT(it.closedAt)}</b>`;
+  const e = enteredAt(it), top = e ? `<b>נכנס ${dmT(e)}</b>` : '', b = it.ball;
+  if (!b) return top + ago(it.at);
+  if (!b.mine || b.nudge) return top + 'ענינו ' + ago(b.since);
+  return top + (it.late ? daysTxt(b.since) + ' בלי תשובה' : ago(b.since));
+}
 function renderInbox() {
-  const all = inboxItems(), v = VIEW.inbox, cnt = {}; all.forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
+  const all = inboxItems(), done = doneItems(), v = VIEW.inbox, cnt = { done: done.length }; all.forEach((x) => { if (!cooling(x)) cnt[x.tab] = (cnt[x.tab] || 0) + 1; });   // המספר בלשונית = מה שברשימה (המתקררים בפס למעלה)
   if (!v.tab) v.tab = cnt.check ? 'check' : cnt.replied ? 'replied' : 'check';
   $('#itabs').style.setProperty('--nt', ITABS.length); $('#itabs').innerHTML = tabsHtml(ITABS, v.tab, cnt);
-  $('#inboxCool').innerHTML = coolHtml(all);
-  const items = all.filter((x) => x.tab === v.tab && !(x.cool && x.src !== 'call')); items.forEach((x) => { x.late = x.src === 'wa' && awaitingLong(x.lead); });
+  $('#inboxCool').innerHTML = coolHtml(all, 'inbox');
+  const items = v.tab === 'done' ? done : all.filter((x) => x.tab === v.tab && !cooling(x));
+  all.forEach((x) => { x.late = x.src === 'wa' && (x.ball ? x.ball.mine && !x.ball.nudge && Date.now() - x.ball.since > 864e5 : awaitingLong(x.lead)); });
   LISTS.inbox = items; const cut = v.more ? items : items.slice(0, ROWMAX), st = ITABS.find((s) => s.id === v.tab);
   $('#inbox').style.setProperty('--c', st.c);
-  $('#inbox').innerHTML = cut.map((it) => rowHtml(it)).join('') + (items.length > cut.length ? `<button type="button" class="lmore" data-more="inbox">עוד ${items.length - cut.length}</button>` : '') + (!items.length ? `<div class="empty">אין כאן כלום. ${st.hint}.</div>` : '');
-  const waiting = all.filter((x) => x.tab === 'check' && x.waiting).length, phone = all.filter((x) => x.calls && x.calls.length).length;
-  $('#inboxSum').innerHTML = `<b>${cnt.check || 0} לבדוק</b>${waiting ? `, ${waiting} מחכים לתשובה` : ''}${phone ? ` · ${phone} עם שיחת טלפון` : ''}. לוחצים על פנייה כדי לטפל בה.`;
+  $('#inbox').innerHTML = cut.map((it) => rowHtml(it, inboxRight(it))).join('') + (items.length > cut.length ? `<button type="button" class="lmore" data-more="inbox">עוד ${items.length - cut.length}</button>` : '') + (!items.length ? `<div class="empty">אין כאן כלום. ${st.hint}.</div>` : '');
+  const late = all.filter((x) => x.tab === 'check' && x.late && !cooling(x)).length;
+  $('#inboxSum').innerHTML = `<b>${cnt.check || 0} אצלך</b> · ${cnt.replied || 0} אצל הלקוח${late ? ` · <b class="warn">${late} מחכים יותר מיום</b>` : ''}. לוחצים על פנייה כדי לטפל בה.`;
   const older = archItems().filter((x) => x.src === 'wa' && x.why === 'cold' && !x.lead.customer_id && ['new', 'replied'].includes(x.lead.status)).length;
   $('#inboxOlder').innerHTML = older ? `ועוד ${older} פניות שלא זזו שבוע — בארכיון. <button type="button" class="linkb" data-goarch>לארכיון</button>` : '';
 }
 function renderCust() {
   const all = custItems(), fresh = all.filter((x) => x.live), v = VIEW.cust, cnt = {};
-  $('#custCool').innerHTML = coolHtml(fresh);
-  fresh.filter((x) => !x.cool).forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
+  $('#custCool').innerHTML = coolHtml(fresh, 'cust');
+  fresh.filter((x) => !cooling(x)).forEach((x) => { cnt[x.tab] = (cnt[x.tab] || 0) + 1; });
   if (!v.tab) v.tab = (CSTAGES.find((s) => cnt[s.id]) || CSTAGES[0]).id;
   $('#cbar').innerHTML = CSTAGES.map((s) => `<i style="--c:${s.c};flex-grow:${cnt[s.id] || .2}"></i>`).join('');
   $('#ctabs').style.setProperty('--nt', CSTAGES.length); $('#ctabs').innerHTML = tabsHtml(CSTAGES, v.tab, cnt);
-  const items = fresh.filter((x) => x.tab === v.tab && !x.cool); LISTS.cust = items;
+  const items = fresh.filter((x) => x.tab === v.tab && !cooling(x)); LISTS.cust = items;
   const cut = v.more ? items : items.slice(0, ROWMAX), st = CSTAGES.find((s) => s.id === v.tab);
   $('#cust').style.setProperty('--c', st.c);
   $('#cust').innerHTML = cut.map((it) => rowHtml(it, it.src === 'job' && it.job.visit_at && it.tab === 'visit' ? `<b>${dm(dayKey(it.job.visit_at))}</b>${hm(it.job.visit_at)}` : null)).join('')
     + (items.length > cut.length ? `<button type="button" class="lmore" data-more="cust">עוד ${items.length - cut.length}</button>` : '') + (!items.length ? `<div class="empty">אין כאן אף אחד. ${st.hint}.</div>` : '');
-  $('#custSum').innerHTML = `<b>${fresh.length} לקוחות פעילים</b> — רק מי שזז בשבוע האחרון (מחכים להחלטה על הצעה: שבועיים).`;
+  $('#custSum').innerHTML = `<b>${fresh.length} לקוחות פעילים</b> — רק מי שזז בשבוע האחרון (מחכים להחלטה על הצעה: שבועיים; מי שאישר נשאר עד שנסגר).`;
   const old = archItems().length;
   $('#custOlder').innerHTML = old ? `ועוד ${old} בארכיון. <button type="button" class="linkb" data-goarch>לארכיון</button>` : '';
 }
 
 /* ---------- "מתקררים" (יום לפני שיורדים) + ארכיון ---------- */
-const stageHe = (it) => ({ check: 'פנייה חדשה', replied: 'מחכים ללקוח' })[it.tab] || (CSTAGES.find((s) => s.id === it.tab) || {}).name || '';
+const stageHe = (it) => ({ check: 'הכדור אצלי', replied: 'מחכה ללקוח' })[it.tab] || (CSTAGES.find((s) => s.id === it.tab) || {}).name || '';
 const daysIdle = (t) => Math.max(1, Math.floor((Date.now() - t) / 864e5));
+const daysTxt = (t) => { const d = daysIdle(t); return d === 1 ? 'יום' : d === 2 ? 'יומיים' : d + ' ימים'; };
 let COOL = new Map();
-function coolHtml(items) {
-  const c = items.filter((x) => x.cool && x.src !== 'call');   // שיחה בלי וואטסאפ — אין איפה לשמור "להמשיך"; פשוט יורדת אחרי שבוע
+// מי מוצג בפס "מתקררים" במקום ברשימה. שיחה בלי וואטסאפ — אין איפה לשמור "להמשיך"; פשוט יורדת אחרי שבוע.
+// בלי עמודות הארכיון בענן אין פס — אז נשארים ברשימה (10.11: קודם נעלמו גם מהרשימה וגם מהפס).
+const cooling = (x) => !!x.cool && x.src !== 'call' && D.archOk !== false;
+const COOLOPEN = {};   // יותר משניים מתקררים → הפס מקופל (11.11: שלא יתפוס את כל המסך); זוכרים אם נפתח
+function coolHtml(items, key) {
+  const c = items.filter(cooling);
   c.forEach((x) => COOL.set(x.id, x));
-  if (!c.length || D.archOk === false) return '';
-  return `<div class="cool"><div class="ct">מתקררים — מחר יורדים לארכיון</div>${c.map((it) => `<div class="crow"><div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}</span><span class="sm">${esc(stageHe(it))} · בלי תזוזה ${daysIdle(it.touch)} ימים</span></div>`
-    + `<div class="cb"><button class="btn main" type="button" data-keep="${esc(it.id)}">להמשיך עוד שבוע</button><button class="btn" type="button" data-arch="${esc(it.id)}">לארכיון</button></div></div>`).join('')}</div>`;
+  if (!c.length) return '';
+  const rows = c.map((it) => `<div class="crow"><div class="tt"><span class="nm">${esc(it.name)}${it.place ? ', ' + esc(it.place) : ''}</span><span class="sm">${esc(stageHe(it))} · בלי תזוזה ${daysIdle(it.touch)} ימים</span></div>`
+    + `<div class="cb"><button class="btn main" type="button" data-keep="${esc(it.id)}">להמשיך עוד שבוע</button><button class="btn" type="button" data-arch="${esc(it.id)}">לארכיון</button></div></div>`).join('');
+  if (c.length <= 2) return `<div class="cool"><div class="ct">מתקררים — מחר יורדים לארכיון</div>${rows}</div>`;
+  return `<details class="cool" data-cool="${key}"${COOLOPEN[key] ? ' open' : ''}><summary class="ct">${c.length} מתקררים — מחר יורדים לארכיון</summary>${rows}</details>`;
 }
+document.addEventListener('toggle', (e) => { const d = e.target; if (d && d.dataset && d.dataset.cool) COOLOPEN[d.dataset.cool] = d.open; }, true);
 async function setLife(it, patch, msg) {
   const rec = it && it.rec; if (!rec || BUSY) return;
   const job = it.src === 'job', key = job ? 'id' : 'jid', prev = {};
@@ -431,7 +547,7 @@ Object.keys(LIST_OF).forEach((k) => {
 let CUR = null, SL = [], WZ = null, BUSY = false;
 const KINDNAME = { wa: 'פנייה מוואטסאפ', call: 'שיחת טלפון', job: 'לקוח באפליקציה', pay: 'תשלום', collect: 'לגבות' };
 function findItem(ref) {
-  return inboxItems().find((x) => x.id === ref) || custItems().find((x) => x.id === ref) || moneyItems().find((x) => x.id === ref)
+  return inboxItems().find((x) => x.id === ref) || custItems().find((x) => x.id === ref) || moneyItems().find((x) => x.id === ref) || (ref && ref[0] === 'D' && doneItems().find((x) => x.id === ref))
     || (ref && ref[0] === 'K' && (() => { const c = D.calls.find((x) => 'K' + x.id === ref); return c && { id: ref, src: 'call', call: c, name: callWho(c), place: (c.data && c.data.place) || '', what: (c.data && c.data.topic) || '', at: callTime(c) }; })())
     || (ref && ref[0] === 'T' && (() => { const t = D.tasks.find((x) => 'T' + x.id === ref); return t && { id: ref, src: 'task', task: t, name: t.title, at: 0 }; })());
 }
@@ -449,12 +565,33 @@ function callBlock(c) {
   if (a.weak) out.push('<p class="note-weak">התמלול לא ברור בחלק מהשיחה. כדאי לשמוע את ההקלטה בדרייב.</p>');
   return out.join('');
 }
+const AGAIN_BTN = '<button class="btn" type="button" data-s="replied">חזרתי אליו</button>';   // מוריד את הסימון "כתב שוב"; השלב לא משתנה
 function itemBody(it) {
   const rows = [], extra = [], acts = [];
-  if (it.src === 'wa' || (it.src === 'call' && it.calls)) {   // פנייה (מחלון הפניות). שיחה מחלון השיחות — בענף נפרד למטה
+  if (it.tab === 'done') {   // "טופל": מה קרה לפנייה, ואיך מחזירים אותה. שום דבר לא נמחק
     const l = it.lead;
     if (it.phone) rows.push(['טלפון', fmtPhone(it.phone)]); if (it.place) rows.push(['איפה', it.place]);
-    if (l) { const s = { new: 'חדש', replied: 'חזרנו אליו', visit: 'קבענו ביקור', quote_sent: 'נשלחה הצעה', approved: 'אישר' }[l.status]; if (s) rows.push(['שלב', s]); if (ts(l)) rows.push(['וואטסאפ אחרון', ago(ts(l))]); }
+    rows.push(['מה קרה', it.whyHe]); rows.push(['מתי', dmT(it.closedAt) + ' · ' + ago(it.closedAt)]);
+    if (l && l.summary) extra.push(`<p class="body">${esc(l.summary)}</p>`);
+    if (it.calls && it.calls.length) extra.push(`<div class="srch call">${it.calls.length > 1 ? it.calls.length + ' שיחות טלפון' : 'שיחת טלפון'}</div>` + it.calls.slice(0, 6).map((c) => `<div class="callb">${callBlock(c)}</div>`).join(''));
+    if (it.back) acts.push(`<button class="btn main" type="button" data-s="reopen">${it.back === 'arch' ? 'להחזיר לפניות' : 'להחזיר ל״הכדור אצלי״'}</button>`);
+    if (it.go) acts.push('<button class="btn main" type="button" data-s="gocust">לכרטיס בלקוחות</button>');
+    if (!it.back && !it.go) acts.push('<p class="hint2">הפנייה סגורה. אם הלקוח יכתוב שוב בוואטסאפ — היא תחזור לבד.</p>');
+  } else if (it.src === 'wa' || (it.src === 'call' && it.calls)) {   // פנייה (מחלון הפניות). שיחה מחלון השיחות — בענף נפרד למטה
+    const l = it.lead, b = it.ball, inCust = it.tab && CSTAGES.some((s) => s.id === it.tab);
+    if (it.phone) rows.push(['טלפון', fmtPhone(it.phone)]); if (it.place) rows.push(['איפה', it.place]);
+    if (l && !b) { const s = { new: 'חדש', replied: 'חזרנו אליו', visit: 'קבענו ביקור', quote_sent: 'נשלחה הצעה', approved: 'אישר' }[l.status]; if (s) rows.push(['שלב', s]); if (ts(l)) rows.push(['וואטסאפ אחרון', ago(ts(l))]); }
+    if (b) {   // פינג-פונג: אצל מי הכדור, ומי כתב אחרון
+      rows.push(['הכדור', b.nudge ? 'אצל הלקוח כבר ' + daysTxt(b.since) + ' — אולי להזכיר לו' : b.mine ? 'אצלך — הוא מחכה לתשובה' : 'אצל הלקוח — מחכים לו']);
+      if (b.inAt) rows.push(['הוא כתב', ago(b.inAt)]); if (b.outAt) rows.push(['ענינו לו', ago(b.outAt)]);
+      if (!b.inAt && !b.outAt && ts(l)) rows.push(['וואטסאפ אחרון', ago(ts(l))]);
+    }
+    if (!inCust) {   // אור, 10.11: "לא ברור איך הליד הגיע, לא ברור מתי הוא נכנס"
+      const e = enteredAt(it); if (e) rows.push(['נכנס', dmT(e) + ' · ' + ago(e)]);
+      rows.push(['הגיע דרך', it.src === 'call' ? 'שיחת טלפון' : it.calls && it.calls.length ? 'וואטסאפ וגם שיחת טלפון' : 'וואטסאפ']);
+    }
+    if (it.again) rows.push(['כתב שוב בוואטסאפ', ago(it.again)]);
+    if (it.ask && !inCust) extra.push('<div class="sugg"><p><b>הסריקה מציעה:</b> נראה שכבר נשלחה לו הצעת מחיר. להעביר אותו ל״הצעה נשלחה״ (בלקוחות)?</p><div class="row"><button class="btn" type="button" data-s="askyes">כן, להעביר</button><button class="btn ghost" type="button" data-s="askno">להשאיר כאן</button></div></div>');
     const both = l && it.calls && it.calls.length;
     if (both) extra.push('<div class="srch wa">וואטסאפ</div>');
     if (l && l.summary) extra.push(`<p class="body">${esc(l.summary)}</p>`);
@@ -462,21 +599,24 @@ function itemBody(it) {
     const msgs = ((l && l.data && l.data.messages) || []).filter((m) => m && m.text && !/^\s*\[[^\]]*\]\s*$/.test(m.text)).slice(-4);   // בלי "[תמונה]"/"[ללא טקסט]" — התמונות מוצגות למעלה
     if (msgs.length) extra.push(`<div class="chat">${msgs.map((m) => `<div class="b ${m.me ? 'me' : ''}">${esc(short(m.text, 260))}</div>`).join('')}</div>`);
     if (it.calls && it.calls.length) extra.push(`<div class="srch call">${it.calls.length > 1 ? it.calls.length + ' שיחות טלפון' : 'שיחת טלפון'}</div>` + it.calls.slice(0, 6).map((c) => `<div class="callb">${callBlock(c)}</div>`).join(''));
-    const inCust = it.tab && CSTAGES.some((s) => s.id === it.tab);
     if (!inCust) {
       acts.push('<button class="btn main" type="button" data-s="wizard">לטפל בפנייה: לפתוח כרטיס ולתאם</button>');
-      acts.push('<div class="row">' + (it.src === 'wa' && it.lead.status === 'new' ? '<button class="btn" type="button" data-s="replied">חזרתי אליו</button>' : it.src === 'call' ? '<button class="btn" type="button" data-s="handled">טופל</button>' : '')
+      // הכדור: "עניתי" מעביר ל"מחכה ללקוח"; משם אפשר להחזיר. לקוח שכותב שוב חוזר לבד.
+      const ballBtn = it.again ? AGAIN_BTN : it.src === 'wa' && b ? (b.mine ? `<button class="btn" type="button" data-s="replied">${b.nudge ? 'הזכרתי לו — מחכה ללקוח' : 'עניתי — מחכה ללקוח'}</button>` : '<button class="btn" type="button" data-s="tome">להחזיר ל״הכדור אצלי״</button>') : it.src === 'call' ? '<button class="btn" type="button" data-s="handled">טופל</button>' : '';
+      acts.push('<div class="row">' + ballBtn
         + '<button class="btn ghost" type="button" data-s="skip">לא רלוונטי</button></div>');
-    } else acts.push('<button class="btn main" type="button" data-s="wizard">להמשיך: תיאום, דמי ביקור וחשבונית</button>');
+    } else { acts.push('<button class="btn main" type="button" data-s="wizard">להמשיך: תיאום, דמי ביקור וחשבונית</button>'); if (it.again) acts.push(AGAIN_BTN); }
   } else if (it.src === 'job') {
     const j = it.job, c = it.cust;
     if (c && c.phone) rows.push(['טלפון', fmtPhone(c.phone)]); if (c && c.address) rows.push(['כתובת', c.address]);
     rows.push(['שלב', CSTAGES.find((s) => s.id === it.tab).name]); if (j.visit_at) rows.push(['ביקור', dayHe(dayKey(j.visit_at)) + ' ' + hm(j.visit_at)]);
     if (isOwner() && +j.price_agreed) rows.push(['סוכם', shek(j.price_agreed) + ' · שולם ' + shek(paidOf(j.id))]);
+    if (it.again) rows.push(['כתב שוב בוואטסאפ', ago(it.again)]);
     if (j.problem) extra.push(`<p class="body">${esc(short(j.problem, 400))}</p>`);
     D.calls.filter((x) => x.customer_id && x.customer_id === j.customer_id).slice(0, 3).forEach((x) => extra.push(`<div style="border-top:1px solid var(--line);padding-top:10px"><span class="kind" style="--pc:#b0587d">שיחת טלפון</span>${callBlock(x)}</div>`));
     if (['lead', 'visit'].includes(j.stage)) acts.push('<button class="btn main" type="button" data-s="wizard">' + (j.stage === 'lead' ? 'לתאם ביקור' : j.visit_at && T(j.visit_at) < Date.now() ? 'הביקור היה: דמי ביקור וחשבונית' : 'פרטי הביקור') + '</button>');
     if (isOwner()) acts.push(`<a class="btn${['quote', 'sent'].includes(it.tab) ? ' main' : ''}" href="offer.html?job=${encodeURIComponent(j.id)}">${it.tab === 'quote' ? 'להכין הצעת מחיר' : it.tab === 'sent' ? 'לפתוח את ההצעה' : 'הצעות מחיר'}</a>`);   // offer.html — כלי ההצעות של הלוח (09.11)
+    if (it.again) acts.push(AGAIN_BTN);
     if (c && c.id) acts.push('<button class="btn" type="button" data-s="custedit">לערוך פרטי לקוח</button>');
     acts.push('<a class="btn ghost" href="./">לפתוח באפליקציה (תמונות)</a>');
   } else if (it.src === 'call') { /* מטופל למעלה */ } else if (it.src === 'pay') {
@@ -550,9 +690,46 @@ $('#sheet').addEventListener('click', async (e) => {
   BUSY = true; b.disabled = true;
   try {
     if (s === 'wizard') { startWizard(it); return; }
-    if (s === 'replied') { const prev = (D.leads.find((x) => x.jid === it.jid) || it.lead).status; if (await setLeadStatus(it.jid, 'replied')) { toast(it.name + ' עבר ל"חזרנו אליהם"', () => setLeadStatus(it.jid, prev).then(() => renderAll())); await afterAction(it); } return; }
+    if (s === 'replied' && it.again) {   // "כתב שוב": רושמים שחזרנו אליו. השלב נשאר כמו שהוא (רק "חדש" הופך ל"חזרנו אליו", כמו תמיד)
+      const l = D.leads.find((x) => x.jid === (it.againJid || it.jid)); if (!l) return;
+      const prev = { status: l.status, status_by: l.status_by || 'scan', status_at: l.status_at || null }, patch = { status: l.status === 'new' ? 'replied' : l.status, status_by: 'phone', status_at: new Date().toISOString() };
+      if (!(await dbUpdate('wa_leads', l.jid, patch, 'jid', { status: l.status }))) return;
+      Object.assign(l, patch); toast(it.name + ': סומן שחזרנו אליו', async () => { if (await dbUpdate('wa_leads', l.jid, prev, 'jid', { status: patch.status })) Object.assign(l, prev); renderAll(); });
+      if (it.src === 'wa' && !CSTAGES.some((x) => x.id === it.tab)) await afterAction(it); else { renderAll(); openItem(findItem(it.id) || it, SL); }
+      return;
+    }
+    if (s === 'replied') { if (await moveBall(it, false)) await afterAction(it); return; }
+    if (s === 'tome') { if (await moveBall(it, true)) await afterAction(it); return; }
+    if (s === 'askyes') {   // הצעת הסריקה "נשלחה הצעה?" — עוברים שלב רק בלחיצה הזאת
+      const l = D.leads.find((x) => x.jid === it.jid); if (!l) return; const snap = leadSnap(l);
+      if (await setLeadStatus(it.jid, 'quote_sent')) { toast(it.name + ' עבר ל״הצעה נשלחה״ (בלקוחות)', async () => { await leadRestore(it.jid, snap, 'quote_sent'); renderAll(); }); await afterAction(it); }
+      return;
+    }
+    if (s === 'askno') { const a = askNo(); a.push(it.ask.key); try { localStorage.setItem(ASK_KEY, JSON.stringify(a.slice(-300))); } catch (e) {} renderAll(); openItem(findItem(it.id) || it, SL); return; }
+    if (s === 'reopen') {   // מ"טופל" בחזרה לפניות
+      // מחזירים גם את השיחות שנסגרו יחד עם הפנייה ("לא רלוונטי"); שיחה שסומנה "טופל" בנפרד נשארת סגורה
+      const cs = (it.calls || []).filter((c) => c.handled_at && !c.customer_id && (it.back !== 'skip' || /^לא רלוונטי/.test(c.handled_by || ''))), csnap = cs.map((c) => [c.id, { handled_at: c.handled_at, handled_by: c.handled_by || null }]);
+      const undoCalls = async () => { for (const [id, sn] of csnap) { const c = D.calls.find((x) => x.id === id); if (c && (await dbUpdate('calls', id, sn))) Object.assign(c, sn); } };
+      let ok = false, undo = null;
+      if (it.back === 'skip') { const l = D.leads.find((x) => x.jid === it.jid); if (!l) return; const snap = leadSnap(l); ok = await setLeadStatus(it.jid, 'new', 'skip'); undo = () => leadRestore(it.jid, snap, 'new'); }
+      else if (it.back === 'arch') {
+        const l = D.leads.find((x) => x.jid === it.jid); if (!l) return;
+        const patch = { archived_at: null, keep_until: new Date(Date.now() + LIVE_DAYS * 864e5).toISOString() }, prev = { archived_at: l.archived_at || null, keep_until: l.keep_until || null };
+        ok = await dbUpdate('wa_leads', l.jid, patch, 'jid'); if (ok) Object.assign(l, patch); undo = async () => { if (await dbUpdate('wa_leads', l.jid, prev, 'jid')) Object.assign(l, prev); };
+      } else if (it.back === 'call') ok = true;
+      if (!ok) return;
+      if (it.back !== 'arch') for (const c of cs) await setCallHandled(c.id, false);
+      toast(it.name + (it.back === 'arch' ? ' חזר לפניות' : ' חזר ל״הכדור אצלי״'), async () => { if (undo) await undo(); if (it.back !== 'arch') await undoCalls(); renderAll(); });
+      await afterAction(it); return;
+    }
+    if (s === 'gocust') {
+      const cid = (it.lead && it.lead.customer_id) || (it.call && it.call.customer_id) || (it.calls || []).map((c) => c.customer_id).find(Boolean);
+      const t = custItems().find((x) => x.live && ((it.jid && x.jid === it.jid) || (cid && ((x.cust && x.cust.id === cid) || (x.job && x.job.customer_id === cid)))));
+      if (!t) { toast('הכרטיס כבר לא בלקוחות הפעילים. אפשר לחפש אותו בארכיון'); return; }
+      closeSheet(); curSec = 'p-cust'; VIEW.cust.tab = t.tab; VIEW.cust.more = true; renderAll(); jump('p-cust'); openItem(t, [t]); return;
+    }
     if (s === 'skip') {
-      if (it.src === 'wa') { const prev = (D.leads.find((x) => x.jid === it.jid) || it.lead).status; if (await setLeadStatus(it.jid, 'skip')) { const cs = it.calls || []; for (const c of cs) await setCallHandled(c.id, true); toast(it.name + ' סומן "לא רלוונטי"', async () => { await setLeadStatus(it.jid, prev, 'skip'); for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } }
+      if (it.src === 'wa') { const l0 = D.leads.find((x) => x.jid === it.jid) || it.lead, snap = leadSnap(l0); if (await setLeadStatus(it.jid, 'skip')) { const cs = (it.calls || []).filter(callOpen); for (const c of cs) await setCallHandled(c.id, true, 'לא רלוונטי'); toast(it.name + ' סומן "לא רלוונטי" (נמצא ב״טופל״)', async () => { await leadRestore(it.jid, snap, 'skip'); for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } }
       else if (it.src === 'call') { const cs = (it.calls || [it.call]).filter(callOpen); let ok = true; for (const c of cs) ok = (await setCallHandled(c.id, true, 'לא רלוונטי')) && ok; if (ok) { toast(cs.length > 1 ? cs.length + ' שיחות סומנו "לא רלוונטי"' : 'השיחה סומנה "לא רלוונטי"', async () => { for (const c of cs) await setCallHandled(c.id, false); renderAll(); }); await afterAction(it); } }
       return;
     }
@@ -567,13 +744,17 @@ $('#sheet').addEventListener('click', async (e) => {
     if (s === 'invoiced') { if (await dbUpdate('payments', it.pay.id, { invoice_issued: true })) { it.pay.invoice_issued = true; toast('סומן: חשבונית הוצאה', () => dbUpdate('payments', it.pay.id, { invoice_issued: false }).then(() => { it.pay.invoice_issued = false; renderAll(); })); await afterAction(it); } return; }
     if (s === 'custedit') {   // פרטי לקוח מתוך הלוח (09.11, תחילת ניהול לקוחות)
       const c = it.cust, box = $('#sheet .sacts');
+      CE0 = { name: (c.name || '').trim(), phone: (c.phone || '').trim() || null, email: (c.email || '').trim() || null, address: (c.address || '').trim() || null, notes: (c.notes || '').trim() || null };   // מה שהוצג כשהטופס נפתח
       box.innerHTML = `<div class="cedit"><label>שם<input id="ce-name" value="${esc(c.name || '')}"></label><label>טלפון<input id="ce-phone" inputmode="tel" value="${esc(c.phone || '')}"></label><label>מייל<input id="ce-mail" inputmode="email" dir="ltr" value="${esc(c.email || '')}"></label><label>כתובת<input id="ce-addr" value="${esc(c.address || '')}"></label><label>הערות<textarea id="ce-note" rows="2">${esc(c.notes || '')}</textarea></label><button class="btn main" type="button" data-s="custsave">לשמור</button></div>`;
       $('#ce-name').focus(); return;
     }
     if (s === 'custsave') {
-      const c = it.cust, patch = { name: $('#ce-name').value.trim(), phone: $('#ce-phone').value.trim() || null, email: $('#ce-mail').value.trim() || null, address: $('#ce-addr').value.trim() || null, notes: $('#ce-note').value.trim() || null };
-      if (!patch.name) return toast('צריך שם');
-      if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) return toast('המייל לא נראה תקין');
+      const c = it.cust, all = { name: $('#ce-name').value.trim(), phone: $('#ce-phone').value.trim() || null, email: $('#ce-mail').value.trim() || null, address: $('#ce-addr').value.trim() || null, notes: $('#ce-note').value.trim() || null };
+      if (!all.name) return toast('צריך שם');
+      if (all.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(all.email)) return toast('המייל לא נראה תקין');
+      // 10.11: לענן נשלח רק מה שבאמת שונה בטופס — שדה שמישהו אחר עדכן בינתיים (או שלא הוצג) לא נדרס
+      const patch = {}; Object.keys(all).forEach((k) => { if (!CE0 || all[k] !== CE0[k]) patch[k] = all[k]; });
+      if (!Object.keys(patch).length) { toast('לא שונה כלום'); openItem(findItem(it.id) || it, SL); return; }
       if (await dbUpdate('customers', c.id, patch)) { const cc = D.customers.find((x) => x.id === c.id); if (cc) Object.assign(cc, patch); dirty(); renderAll(); toast('פרטי הלקוח נשמרו'); openItem(findItem(it.id) || it, SL); }
       return;
     }
@@ -590,17 +771,19 @@ $('#agenda').addEventListener('keydown', (e) => { const row = e.target.closest &
 
 /* ---------- האשף: פנייה → כרטיס → ביקור ביומן → דמי ביקור → חשבונית ---------- */
 const WSTEPS = ['בודקים', 'מתאמים ביקור', 'דמי ביקור', 'חשבונית'];
-// איש-קשר ששמור אצל אור כ"לקוח דימה זכרון": השם = דימה, המקום = זכרון (08.11, אור: "שהכרטיס יהיה מלא")
+// איש-קשר ששמור אצל אור כ"לקוח <שם> <מקום>": השם = המילה שאחרי "לקוח", המקום = השאר (08.11, אור: "שהכרטיס יהיה מלא")
 function splitContactName(s) {
   s = cleanName(s); const m = s.match(/^(?:לקוח(?:ה)?|לק'|לק׳)\s+(\S+)\s+(.+)$/);
   return m ? { name: m[1], place: m[2].trim() } : { name: s, place: '' };
 }
+let CE0 = null;
 function startWizard(it) {
   const c = it.call || (it.calls && it.calls[0]), a = (c && c.data) || {}, l = it.lead;
   const nm = splitContactName(it.name && !looksPhone(it.name) ? it.name : (a.person || ''));
   const ld = (l && l.data) || {};
   WZ = { it, step: 0, name: nm.name, phone: normPhone(it.phone || (c && c.phone)) || '', place: it.place || a.place || nm.place || '',
     problem: [ld.problem, l && l.summary].filter(Boolean).join('\n') || a.summary || it.what || '', visit: a.visit || null, jobId: null, customerId: null, payId: null, fee: null };
+  if (!isOwner() && l) WZ.raw = [l.__rawP || ld.problem, l.__raw || l.summary].filter(Boolean).join('\n');   // צוות: המקור (עם הסכומים) של מה שמוצג מוסתר
   if (it.src === 'job') { const j = it.job; WZ.jobId = j.id; WZ.customerId = j.customer_id; WZ.step = j.stage === 'lead' ? 1 : 2; WZ.problem = j.problem || ''; if (j.visit_at) WZ.visitAt = j.visit_at; WZ.showFee = !!(j.visit_at && T(j.visit_at) < Date.now()); }
   if (it.src === 'wa' && l && l.customer_id) { WZ.useCust = l.customer_id; const j = D.jobs.find((x) => x.customer_id === l.customer_id && ['lead', 'visit'].includes(x.stage)); if (j) { WZ.jobId = j.id; WZ.customerId = j.customer_id; WZ.step = j.stage === 'lead' ? 1 : 2; if (j.visit_at) WZ.visitAt = j.visit_at; } }
   renderWizard();
@@ -669,8 +852,19 @@ function readWzForm(w) {
   if (!$('#wzName')) return;
   w.name = $('#wzName').value.trim(); w.phone = normPhone($('#wzPhone').value) || $('#wzPhone').value.trim();
   w.place = $('#wzPlace').value.trim(); w.problem = $('#wzProb').value.trim();
-  const raw = w.it.lead && w.it.lead.__raw;   // צוות: התיבה מוסתרת-סכומים; אם לא נערכה — לענן נשמר המקור
-  w.problemRaw = raw && w.problem === (w.it.lead.summary || '').trim() ? raw.trim() : null;
+}
+// צוות רואה "[סכום]" במקום סכומים. מה שנשמר לענן: לא נערך → המקור; נערך → הסכומים חוזרים למקומם לפי הסדר;
+// אי-אפשר להתאים (נמחק/נוסף סימון) → המקור המלא ואחריו מה שהצוות כתב, בלי הסימון. כך סכום לא נמחק ו"[סכום]" לא נכנס לעבודה.
+const MASK = '[סכום]';
+function unmask(shown, raw) {
+  shown = String(shown || ''); raw = String(raw || '').trim();
+  if (!shown.includes(MASK)) return shown;
+  const strip = () => shown.split(MASK).join('').replace(/[ \t]{2,}/g, ' ').trim();
+  if (!raw) return strip();
+  if (shown.trim() === noMoney(raw).trim()) return raw;
+  const amts = raw.match(MONEY_RE) || [], parts = shown.split(MASK);
+  if (amts.length && parts.length - 1 === amts.length) return parts.reduce((a, x, i) => a + amts[i - 1] + x);
+  return [raw, strip()].filter(Boolean).join('\n');
 }
 async function wizardClick(b) {
   const w = WZ, s = b.dataset.s; if (!w || BUSY) return; BUSY = true; b.disabled = true;
@@ -680,9 +874,9 @@ async function wizardClick(b) {
       readWzForm(w); w.useCust = null; w.forceNew = false;
       if (!w.name && !w.phone) { toast('צריך לפחות שם או טלפון'); return; }
       const r = await openCard(w); if (r === 'ask') { renderWizard(); return; } if (!r) return;
-      w.step = 1; renderAll(); renderWizard(); return;
+      w.step = w.taken || 1; renderAll(); renderWizard(); return;
     }
-    if (s === 'wz-use' || s === 'wz-new') { readWzForm(w); if (s === 'wz-use') w.useCust = w.askCust; else w.forceNew = true; w.askCust = null; const r = await openCard(w); if (r === 'ask') { renderWizard(); return; } if (!r) return; w.step = 1; renderAll(); renderWizard(); return; }
+    if (s === 'wz-use' || s === 'wz-new') { readWzForm(w); if (s === 'wz-use') w.useCust = w.askCust; else w.forceNew = true; w.askCust = null; const r = await openCard(w); if (r === 'ask') { renderWizard(); return; } if (!r) return; w.step = w.taken || 1; renderAll(); renderWizard(); return; }
     if (s === 'wz-showfee') { w.showFee = true; renderWizard(); return; }
     if (s === 'wz-later') { w.step = isOwner() ? 2 : 2; if (!isOwner()) { closeSheet(); renderAll(); toast('הכרטיס נפתח. התיאום מחכה בחלון "לקוחות"'); return; } renderWizard(); return; }
     if (s === 'wz-visit' || s === 'wz-visited') {
@@ -726,13 +920,25 @@ async function openCard(w) {
     if (found && found.id === w.ids.cust) c = found;   // הלקוח שהאשף הזה עצמו יצר (ניסיון חוזר אחרי כשל) — לא שואלים
     else if (found) { if (!D.customers.some((x) => x.id === found.id)) { D.customers.push(found); dirty(); } w.askCust = found.id; return 'ask'; }
   }
+  // 10.11: קודם "תופסים" את הפנייה בענן (עדכון מותנה), ורק מי שתפס יוצר לקוח ועבודה — שני מכשירים באותו רגע לא יוצרים כפילות.
+  // מישהו אחר כבר תפס → טוענים מחדש וממשיכים בכרטיס שהוא פתח.
+  const cid = c ? c.id : w.ids.cust; let claimed = null;
+  if (l && l.customer_id !== cid) {
+    const patch = { customer_id: cid }, prev = { customer_id: l.customer_id || null, status: l.status, status_by: l.status_by || 'scan', status_at: l.status_at || null };
+    if (l.status === 'new') Object.assign(patch, { status: 'replied', status_by: 'phone', status_at: now });
+    const r = await tryUpdate('wa_leads', l.jid, patch, 'jid', { customer_id: prev.customer_id, status: l.status });
+    if (r === 'changed') return takenCard(w, jid);
+    if (!r) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
+    Object.assign(l, patch); claimed = prev;
+  }
   if (!c) {
     c = { id: w.ids.cust, name: w.name || fmtPhone(w.phone), phone: w.phone || null, address: w.place || null, source: it.src === 'call' ? 'טלפון' : 'וואטסאפ', created_at: now, updated_at: now };
-    if (!(await dbInsert('customers', c))) return false; if (!D.customers.some((x) => x.id === c.id)) D.customers.push(c); dirty();
+    if (!(await dbInsert('customers', c))) { if (claimed && (await tryUpdate('wa_leads', l.jid, claimed, 'jid', { customer_id: cid })) === true) Object.assign(l, claimed); return false; }   // הלקוח לא נוצר → משחררים את הפנייה (בשקט)
+    if (!D.customers.some((x) => x.id === c.id)) D.customers.push(c); dirty();
   } else if (!c.address && w.place) { if (await dbUpdate('customers', c.id, { address: w.place })) c.address = w.place; }
   let j = D.jobs.find((x) => x.id === w.ids.job) || D.jobs.find((x) => x.customer_id === c.id && x.stage === 'lead' && !x.visit_at && !x.deleted_at && (!x.problem || !w.problem || x.problem === (isOwner() ? w.problem : noMoney(w.problem))));
   if (!j) {
-    const prob = w.problemRaw || w.problem;   // צוות: לענן המקור, אם לא נערך
+    const prob = isOwner() ? w.problem : unmask(w.problem, w.raw);   // צוות: התיבה מוסתרת-סכומים; לענן לא נשמר "[סכום]" לעולם
     j = { id: w.ids.job, customer_id: c.id, title: short(prob, 60) || null, stage: 'lead', stage_changed_at: now, problem: prob || null, created_at: now, updated_at: now };
     if (!(await dbInsert('jobs', j))) return false;
     if (!isOwner()) j = { ...j, problem: noMoney(j.problem), title: noMoney(j.title) };   // צוות: בענן נשמר המקור, במסך — בלי סכומים (ביקורת לוח 3)
@@ -740,9 +946,20 @@ async function openCard(w) {
   }
   w.customerId = c.id; w.jobId = j.id; if (!w.name) w.name = c.name;
   let linked = true;
-  if (l && l.customer_id !== c.id) { const patch = { customer_id: c.id }; if (l.status === 'new') Object.assign(patch, { status: 'replied', status_by: 'phone', status_at: now }); if (await dbUpdate('wa_leads', l.jid, patch, 'jid', { status: l.status })) Object.assign(l, patch); else linked = false; }
   for (const cl0 of it.calls || (it.call ? [it.call] : [])) { const cl = D.calls.find((x) => x.id === cl0.id) || cl0; if (cl.customer_id === c.id) continue; const p = { customer_id: c.id, handled_at: now, handled_by: D.me || 'לוח' }; if (await dbUpdate('calls', cl.id, p)) Object.assign(cl, p); else linked = false; }
   return linked;
+}
+// הפנייה השתנתה בענן בזמן שהאשף היה פתוח. אם מישהו כבר פתח לה כרטיס — ממשיכים בו (לא יוצרים שני); אחרת מבקשים לנסות שוב.
+async function takenCard(w, jid) {
+  let ok = false; try { ok = await load(); } catch (e) { console.warn(e); }
+  if (!ok) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
+  const l = D.leads.find((x) => x.jid === jid), c = l && l.customer_id && custOf(l.customer_id);
+  if (!c) { renderAll(); toast('הפנייה השתנתה בינתיים במכשיר אחר. בדוק ונסה שוב'); return false; }
+  toast('מישהו אחר כבר פתח כרטיס ללקוח הזה. ממשיכים בכרטיס שלו');
+  const j = D.jobs.find((x) => x.customer_id === c.id && ['lead', 'visit'].includes(x.stage) && !x.deleted_at);
+  if (!j) { w.useCust = c.id; return openCard(w); }
+  w.customerId = c.id; w.jobId = j.id; if (!w.name) w.name = c.name; if (j.visit_at) w.visitAt = j.visit_at; w.taken = j.stage === 'lead' ? 1 : 2;
+  return true;
 }
 
 /* ---------- כתיבה לענן ---------- */
@@ -755,7 +972,7 @@ async function fxInsert(table, row) {
   FX.writes.push(['insert', table, row]);
   if (fxFail('insert', table)) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
   const T0 = fxTable(table); if (T0.some((r) => r.id === row.id)) return true;
-  T0.push(JSON.parse(JSON.stringify(row))); FX.events.push([table, row.id, 'create']); return true;
+  T0.push(JSON.parse(JSON.stringify(row))); FX.events.push([table, row.id, 'create']); FX.rev = (FX.rev || 0) + 1; return true;
 }
 async function fxUpdate(table, id, patch, key, expect) {
   FX.writes.push(['update', table, id, patch]);
@@ -763,17 +980,29 @@ async function fxUpdate(table, id, patch, key, expect) {
   const r = fxTable(table).find((x) => x[key || 'id'] === id);
   if (r && expect && Object.entries(expect).some(([k, v]) => (r[k] == null ? null : r[k]) !== v)) { toast('זה השתנה בינתיים במכשיר אחר. מרענן…'); reloadSoon(); return false; }
   if (!r) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
-  Object.assign(r, patch); FX.events.push([table, id, 'update']); return true;
+  Object.assign(r, patch); FX.events.push([table, id, 'update']); FX.rev = (FX.rev || 0) + 1; return true;
 }
 let reloadT;
 function reloadSoon() { clearTimeout(reloadT); reloadT = setTimeout(async () => { if (BUSY || TICKING.size) { reloadSoon(); return; } try { if (await load()) { renderAll(); refreshOpenSheet(); } } catch (e) { console.warn(e); } }, FX ? 50 : 600); }
 // אחרי רענון: חלונית פתוחה (לא אשף) נבנית מחדש מהנתונים הטריים, כדי שהפעולה הבאה לא תיגע בעותק ישן
-function refreshOpenSheet() { if (CUR && !WZ && CUR.id !== 'menu') { const f = findItem(CUR.id); if (f) openItem(f, SL.map((x) => findItem(x.id) || x)); else closeSheet(); } }
+// soft = רענון-רקע שקט: הכרטיס נשאר פתוח באותו מקום. אם הפריט כבר לא ברשימות (טופל במכשיר אחר) — לא סוגרים מתחת לידיים, רק מחליפים את הכפתורים בהסבר.
+function refreshOpenSheet(soft) {
+  if (!CUR || WZ || CUR.id === 'menu') return;
+  const f = findItem(CUR.id), sh = $('#sheet'), y = sh.scrollTop;
+  if (f) { if (CUR.agId) f.agId = CUR.agId; openItem(f, SL.map((x) => findItem(x.id) || x)); if (soft) sh.scrollTop = y; }
+  else if (!soft) closeSheet();
+  else { const a = $('#sheet .sacts'); if (a) a.innerHTML = '<p class="hint2">הכרטיס הזה עודכן במכשיר אחר. סוגרים ופותחים אותו מחדש מהרשימה.</p>'; }
+}
 async function logEvent(entity, id, action, diff) {
   if (FX || !/^[0-9a-f-]{36}$/i.test(String(id))) return;   // events.entity_id הוא uuid; jid/שם-קובץ לא נרשמים
   try { await sb.from('events').insert({ entity, entity_id: id, action, device: 'board', diff }); } catch (e) { /* לוג בלבד */ }
 }
-async function dbInsert(table, row) {
+// WSEQ/PENDING: כל כתיבה נספרת, כדי שרענון-רקע לא יתחיל באמצע כתיבה ולא ידרוס את המסך בנתונים שנטענו לפניה
+let WSEQ = 0, PENDING = 0;
+async function counted(f) { WSEQ++; PENDING++; try { return await f(); } finally { PENDING--; } }
+const dbInsert = (table, row) => counted(() => dbInsert0(table, row));
+const dbUpdate = (table, id, patch, key, expect) => counted(() => dbUpdate0(table, id, patch, key, expect));
+async function dbInsert0(table, row) {
   if (FX) return fxInsert(table, row);
   const { error } = await sb.from(table).insert(row);
   if (error && error.code === '23505') return true;   // כבר נשמר (ניסיון חוזר עם אותו מזהה) — לא כפילות
@@ -781,7 +1010,7 @@ async function dbInsert(table, row) {
   logEvent(table, row.id, 'create', row); return true;
 }
 // expect: {עמודה: ערך} — מעדכנים רק אם בענן עדיין כך (מכשיר אחר לא שינה בינתיים). אחרת: לא נשמר + רענון.
-async function dbUpdate(table, id, patch, key, expect) {
+async function dbUpdate0(table, id, patch, key, expect) {
   if (FX) return fxUpdate(table, id, patch, key, expect);
   const p = { ...patch, updated_at: new Date().toISOString() };
   let q = sb.from(table).update(p).eq(key || 'id', id); if (expect) Object.entries(expect).forEach(([k, v]) => { q = v == null ? q.is(k, null) : q.eq(k, v); });
@@ -790,13 +1019,44 @@ async function dbUpdate(table, id, patch, key, expect) {
   if (error || !data || !data.length) { console.warn(table, error); toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
   logEvent(table, id, 'update', patch); return true;
 }
+// עדכון מותנה שקט (בלי הודעה ובלי רענון) — למי שמטפל בעצמו בתוצאה: true = נשמר · 'changed' = בענן כבר ערך אחר · false = כשל
+const tryUpdate = (table, id, patch, key, expect) => counted(async () => {
+  const differs = (r) => Object.entries(expect || {}).some(([k, v]) => (r[k] == null ? null : r[k]) !== v);
+  if (FX) {
+    FX.writes.push(['update', table, id, patch]); if (fxFail('update', table)) return false;
+    const r = fxTable(table).find((x) => x[key || 'id'] === id); if (!r) return false; if (differs(r)) return 'changed';
+    Object.assign(r, patch); FX.events.push([table, id, 'update']); FX.rev = (FX.rev || 0) + 1; return true;
+  }
+  try {
+    let q = sb.from(table).update({ ...patch, updated_at: new Date().toISOString() }).eq(key || 'id', id); Object.entries(expect || {}).forEach(([k, v]) => { q = v == null ? q.is(k, null) : q.eq(k, v); });
+    const { error, data } = await q.select(key || 'id');
+    if (error || !data) { console.warn(table, error); return false; }
+    if (!data.length) return 'changed';
+    logEvent(table, id, 'update', patch); return true;
+  } catch (e) { console.warn(e); return false; }
+});
 async function setLeadStatus(jid, st, expected) {
   const l = D.leads.find((x) => x.jid === jid); if (!l) return false;
   const exp = expected === undefined ? l.status : expected;
   if (exp != null && l.status !== exp && expected !== undefined) { toast('זה השתנה בינתיים. לא שיניתי'); return false; }
-  const prev = [l.status, l.status_at], now = new Date().toISOString(); l.status = st; l.status_at = now;
+  const prev = [l.status, l.status_at, l.status_by], now = new Date().toISOString(); l.status = st; l.status_at = now; l.status_by = 'phone';
   if (await dbUpdate('wa_leads', jid, { status: st, status_by: 'phone', status_at: now }, 'jid', exp ? { status: exp } : null)) return true;
-  [l.status, l.status_at] = prev; renderAll(); return false;
+  [l.status, l.status_at, l.status_by] = prev; renderAll(); return false;
+}
+// "ביטול": מחזירים את הפנייה בדיוק למה שהייתה (שלב, מי שינה ומתי) — רק אם בענן היא עדיין במצב שאנחנו השארנו
+async function leadRestore(jid, snap, expectStatus) {
+  const p = { ...snap }; if (!p.status_at) delete p.status_at;
+  if (!(await dbUpdate('wa_leads', jid, p, 'jid', expectStatus ? { status: expectStatus } : null))) return false;
+  const l = D.leads.find((x) => x.jid === jid); if (l) Object.assign(l, p); return true;
+}
+// הכדור עובר צד בלחיצה: "עניתי — מחכה ללקוח" / "להחזיר ל״הכדור אצלי״". לחיצה של אדם בלבד (שום דבר לא זז לבד בענן)
+async function moveBall(it, toMine) {
+  const l = D.leads.find((x) => x.jid === it.jid); if (!l) return false;
+  const snap = leadSnap(l), patch = { status: toMine ? 'new' : 'replied', status_by: 'phone', status_at: new Date().toISOString() };
+  if (!(await dbUpdate('wa_leads', l.jid, patch, 'jid', { status: l.status }))) return false;
+  Object.assign(l, patch);
+  toast(it.name + (toMine ? ' חזר ל״הכדור אצלי״' : ' עבר ל״מחכה ללקוח״'), async () => { await leadRestore(it.jid, snap, patch.status); renderAll(); });
+  return true;
 }
 async function setTaskDone(id, done) {
   const t = D.tasks.find((x) => x.id === id); if (!t) return false;
@@ -881,12 +1141,12 @@ function sinceTime() {
   return s && Date.now() - s < 4 * 864e5 ? Math.min(s, Date.now() - 3600e3) : y.getTime();
 }
 function briefData() {
-  const S = SINCE, ib = inboxItems(), calls = D.calls.filter((c) => callTime(c) > S);
+  const S = SINCE, calls = D.calls.filter((c) => callTime(c) > S);
   return {
-    newWa: D.leads.filter((l) => isJob(l) && T(l.data && l.data.first_seen ? l.data.first_seen : l.last_activity) > S && l.status === 'new').length,
+    newWa: D.leads.filter((l) => isJob(l) && (secMs(l.data && l.data.first_seen) || T(l.last_activity)) > S && l.status === 'new').length,   // 11.11: first_seen בשניות — קודם לא נספר אף פעם
     callsBiz: calls.filter((c) => ['customer', 'lead'].includes(c.kind)).length,
     callsLead: calls.filter((c) => c.kind === 'lead').length,
-    check: ib.filter((x) => x.tab === 'check').length, waiting: ib.filter((x) => x.tab === 'check' && x.waiting).length,
+    check: mineItems().length, waiting: mineItems().filter((x) => x.waiting).length,
     visits: calEvents(TODAY(), TODAY()).length, tasks: D.tasks.filter((t) => !t.job_id && !t.done_at && t.due && t.due <= TODAY()).length,
     callNext: D.calls.filter((c) => callOpen(c) && c.data && c.data.next && !callIsLead(c)).length,
     inv: moneyItems().filter((m) => m.tab === 'inv').length,
@@ -898,7 +1158,7 @@ function renderHero(bumpIt) {
   const b = briefData(), left = AG.filter((a) => !a.done).length, sinceTxt = new Date(SINCE).toLocaleString('he-IL', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
   const parts = [];
   if (b.callsBiz) parts.push(`<b>${b.callsBiz} שיחות עבודה</b>`);
-  const inboxTxt = b.check ? ` ${b.check === 1 ? 'פנייה אחת מחכה' : b.check + ' פניות מחכות'} לבדיקה.` : ''; if (b.newWa) parts.push(`<b>${b.newWa} פניות חדשות בוואטסאפ</b>`);
+  const inboxTxt = b.check ? ` ${b.check === 1 ? 'פנייה אחת מחכה' : b.check + ' פניות מחכות'} לך.` : ''; if (b.newWa) parts.push(`<b>${b.newWa} פניות חדשות בוואטסאפ</b>`);
   const now = (b.visits ? `${b.visits === 1 ? 'ביקור אחד' : b.visits + ' ביקורים'} היום` : '') + (b.visits && left ? ', ו-' : '') + (left ? `<b class="n" id="hiN">${left === 1 ? 'דבר אחד' : left + ' דברים'}</b> ברשימה` : '');
   $('#brief').innerHTML = (parts.length ? `מאז ${esc(sinceTxt)}: ${parts.join(' ו-')}. ` : '') + (now ? now + '.' : 'הרשימה של היום נקייה.') + inboxTxt;
   if (bumpIt) bump('hiN');
@@ -920,7 +1180,7 @@ function renderTiles() {
   const nextV = calEvents(TODAY(), dayKey(Date.now() + 6 * 864e5)).find((e) => e.t > Date.now());
   const callsToday = D.calls.filter((c) => callDay(c) === TODAY()).length;
   const tiles = [
-    { c: '#2a9a63', i: 'inbox', l: 'פניות לבדוק', v: b.check, d: b.waiting ? `<b class="warn">${b.waiting} מחכים לתשובה</b>` : 'אף אחד לא מחכה', s: week(D.leads.filter(isJob), leadDay), sec: 'p-inbox' },
+    { c: '#2a9a63', i: 'inbox', l: 'הכדור אצלי', v: b.check, d: b.waiting ? `<b class="warn">${b.waiting} מחכים לתשובה</b>` : 'אף אחד לא מחכה', s: week(D.leads.filter(isJob), leadDay), sec: 'p-inbox' },
     isOwner() && { c: '#b0587d', i: 'phone', l: 'שיחות היום', v: callsToday, d: b.callNext ? `<b class="warn">${b.callNext} עם צעד פתוח</b>` : 'הכל טופל', s: week(D.calls, callDay), sec: 'p-calls' },
     { c: '#d39a1c', i: 'cal', l: 'ביקורים היום', v: b.visits, d: nextV ? 'הבא: ' + esc(short(nextV.what.replace(/^.*· /, ''), 18)) + ' ' + (dayKey(nextV.t) === TODAY() ? hm(nextV.t) : dm(dayKey(nextV.t))) : 'אין ביקור קרוב', s: week(D.jobs.filter((j) => j.visit_at), (j) => dayKey(j.visit_at)), sec: 'p-cal' },
     isOwner() ? { c: '#e07a3a', i: 'doc', l: 'להוציא חשבונית', v: b.inv, d: b.inv ? shek(moneyItems().filter((m) => m.tab === 'inv').reduce((s, m) => s + m.amount, 0)) + ' בלי חשבונית' : 'הכל מסודר', s: week(D.payments, (p) => p.paid_at), sec: 'p-money' }
@@ -937,7 +1197,7 @@ const NAVN = { 'p-today': 'היום', 'p-inbox': 'פניות', 'p-cust': 'לקו
 let curSec = 'p-today';
 function badge(id) {
   if (id === 'p-today') return AG.filter((a) => !a.done).length;
-  if (id === 'p-inbox') return inboxItems().filter((x) => x.tab === 'check').length;
+  if (id === 'p-inbox') return mineItems().length;
   if (id === 'p-calls') return D.calls.filter((c) => callOpen(c) && c.data && c.data.next && !callIsLead(c)).length;
   if (id === 'p-money') return moneyItems().filter((m) => m.tab === 'inv').length;
   return 0;
@@ -986,7 +1246,7 @@ function morningLines() {
   const b = briefData(), L = [];
   if (b.callsBiz) L.push(['#b0587d', b.callsBiz, 'שיחות עבודה מאז אתמול' + (b.callsLead ? `, מתוכן ${b.callsLead} פניות חדשות` : '')]);
   if (b.newWa) L.push(['#2a9a63', b.newWa, 'פניות חדשות בוואטסאפ']);
-  if (b.check) L.push(['#2a9a63', b.check, 'פניות מחכות לבדיקה (רלוונטי או לא)']);
+  if (b.check) L.push(['#2a9a63', b.check, 'פניות שהכדור בהן אצלך']);
   if (b.callNext) L.push(['#e07a3a', b.callNext, 'שיחות שנקבע בהן משהו ועוד לא טופל']);
   L.push(['#d39a1c', b.visits, b.visits === 1 ? 'ביקור היום' : 'ביקורים היום']);
   if (b.tasks) L.push(['#4a78d0', b.tasks, 'משימות להיום']);
@@ -1053,6 +1313,7 @@ function renderAll(bumpIt) {
   renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  scanPaint();
 }
 
 // סכומים בטקסט חופשי → [סכום] (רק לתצוגת צוות). ביקורות לוח 4–5: מילת-מפתח עצמאית; סכום = 3+ ספרות (או אלפים עם פסיק);
@@ -1081,7 +1342,7 @@ const MONEY_RE = new RegExp([
 ].join('|'), 'g');
 const noMoney = (t) => (typeof t === 'string' ? t.replace(MONEY_RE, '[סכום]') : t);
 function scrubMoney() {
-  D.leads.forEach((l) => { l.__raw = l.summary; l.summary = noMoney(l.summary); if (l.data && Array.isArray(l.data.messages)) l.data.messages = l.data.messages.map((m) => (m ? { ...m, text: noMoney(m.text) } : m)); });
+  D.leads.forEach((l) => { l.__raw = l.summary; l.summary = noMoney(l.summary); if (l.data && typeof l.data.problem === 'string') { l.__rawP = l.data.problem; l.data = { ...l.data, problem: noMoney(l.data.problem) }; } if (l.data && Array.isArray(l.data.messages)) l.data.messages = l.data.messages.map((m) => (m ? { ...m, text: noMoney(m.text) } : m)); });
   D.jobs.forEach((j) => { j.problem = noMoney(j.problem); j.title = noMoney(j.title); delete j.price_agreed; });
   D.tasks.forEach((t) => { t.title = noMoney(t.title); });
   D.payments = [];
@@ -1093,16 +1354,18 @@ async function resolveRole(session) {
   }
   D.me = who.name; D.role = who.role; D.who = who;
 }
-async function load() {
+// skip (רענון-רקע): נבדק רגע לפני שהנתונים הטריים נכנסים למסך — אם בינתיים התחילה פעולה/כתיבה, מוותרים על הסבב הזה
+async function load(skip) {
   if (FX) {
-    FX.writes = FX.writes || []; FX.events = FX.events || [];
+    FX.writes = FX.writes || []; FX.events = FX.events || []; FX.loads = (FX.loads || 0) + 1;
     if (!FX.server) FX.server = { wa_leads: FX.wa_leads || [], tasks: FX.tasks || [], jobs: FX.jobs || [], customers: FX.customers || [], payments: FX.payments || [], calls: FX.calls || [] };
     const cp = (t) => JSON.parse(JSON.stringify(FX.server[t] || [])).filter((r) => !r.deleted_at);
+    if (skip && skip()) return null;
     Object.assign(D, { leads: cp('wa_leads'), tasks: cp('tasks'), jobs: cp('jobs'), customers: cp('customers'), payments: cp('payments'), calls: cp('calls'), email: FX.email || 'or.perias@gmail.com' });
   } else {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return false;
-    D.email = (session.user.email || '').toLowerCase();
+    D.email = (session.user.email || '').toLowerCase(); D.uid = session.user.id;
     await resolveRole(session);
     const owner = isOwner();
     // Supabase מחזיר עד 1000 שורות לבקשה (ברירת-מחדל) — דפדוף, כדי ששום רשומה לא תיחתך בשקט (סבב-ביקורת לוח 2)
@@ -1111,7 +1374,7 @@ async function load() {
     const AR = ',keep_until,archived_at,archive_reason';
     const arch = async (mk, cap) => { const r = await all(() => mk(AR), cap); if (!r.error || !/keep_until|archived_at|archive_reason|42703/.test((r.error.code || '') + (r.error.message || ''))) return r; D.archOk = false; return all(() => mk(''), cap); };
     const [l, t, j, c, p, k] = await Promise.all([
-      arch((x) => sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,last_activity,scanned_at,customer_id' + x).is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }).order('jid'), 3000),
+      arch((x) => sb.from('wa_leads').select('jid,name,phone,summary,data,media,status,status_at,status_by,last_activity,scanned_at,customer_id' + x).is('deleted_at', null).order('last_activity', { ascending: false, nullsFirst: false }).order('jid'), 3000),
       all(() => sb.from('tasks').select('id,title,due,job_id,done_at,created_at').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 6000),
       arch((x) => sb.from('jobs').select('id,customer_id,title,stage,stage_changed_at,visit_at,quote_sent_at,problem,created_at,updated_at' + (owner ? ',price_agreed' : '') + x).is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 10000),
       all(() => sb.from('customers').select('id,name,address,phone,email,notes').is('deleted_at', null).order('created_at', { ascending: false }).order('id'), 20000),
@@ -1120,6 +1383,7 @@ async function load() {
     for (const r of [l, t, j, c]) if (r.error) throw r.error;
     D.callsOk = !k.error;   // טבלת השיחות חדשה (sql/014) — אם עוד לא קיימת, הלוח עובד בלעדיה
     D.payOk = !p.error; if (p.error) console.warn('payments', p.error);
+    if (skip && skip()) return null;
     Object.assign(D, { leads: l.data, tasks: t.data, jobs: j.data, customers: c.data, payments: p.error ? [] : p.data, calls: k.error ? [] : k.data });
   }
   if (FX) await resolveRole(null);
@@ -1132,10 +1396,10 @@ async function load() {
 }
 async function boot() {
   $('#date').textContent = new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
-  let ok;
+  let ok; const st0 = cloudStamp();   // החותמת נלקחת לפני הטעינה: שינוי שנכנס בין השתיים יתגלה בסבב הבא (לכל היותר רענון מיותר אחד)
   try { ok = await load(); } catch (e) { console.warn(e); $('#hero').hidden = false; $('#brief').textContent = 'לא הצלחתי לטעון מהענן. בדוק רשת ורענן.'; return; }
   if (!ok) { $('#gate').hidden = false; $('#app').classList.remove('boot'); return; }
-  SINCE = sinceTime();
+  SINCE = sinceTime(); BOOTED = true; st0.then((x) => { STAMP = x; });
   $('#hero').hidden = false; $('#grid').hidden = false; renderAll();
   requestAnimationFrame(() => $$('.seg').forEach(pill)); document.fonts && document.fonts.ready.then(() => $$('.seg').forEach(pill));
   setTimeout(unboot, 1800);
@@ -1144,11 +1408,117 @@ async function boot() {
   const h = new Date().getHours();
   if (!seenToday && h >= 5 && h < 13 && !FX) setTimeout(openMorning, 900);
   if (FX && FX.morning) setTimeout(openMorning, 300);
+  if (!FX || FX.autoScan) setTimeout(() => scanRequest(true), FX ? 50 : 2500);   // נכנסים ללוח → מבקשים סריקה טרייה (רק אם האחרונה ישנה)
 }
-// חוזרים ללשונית אחרי יותר מדקה → מרעננים מהענן (מה שסומן בטלפון או במחשב בינתיים)
-let lastLoad = Date.now();
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden || FX || Date.now() - lastLoad < 60000 || WZ || BUSY) return;
-  lastLoad = Date.now(); try { if (await load()) { renderAll(); refreshOpenSheet(); } } catch (e) { console.warn(e); }
-});
+/* ---------- רענון שקט מהענן (10.11): כשחוזרים ללשונית, וכל שתי דקות כשהלוח פתוח — מה שסומן בינתיים במכשיר אחר ---------- */
+// קודם בדיקה זעירה (העדכון האחרון בכל טבלה); טעינה מלאה רק כשמשהו השתנה — כדי לא לשרוף תעבורה בלוח שנשאר פתוח כל היום.
+// לא מרעננים באמצע פעולה, אשף או עריכת פרטי לקוח; כרטיס פתוח נשאר פתוח; שדות ההקלדה (משימה חדשה, חיפוש) לא נבנים מחדש.
+let lastLoad = Date.now(), refreshing = false, BOOTED = false, STAMP = null;
+const REFRESH_MS = FX ? +FX.refresh || 0 : 60000;   // 11.11: דקה במקום שתיים (אור: "שיתעדכן לבד")
+const midWork = () => !!(WZ || BUSY || PENDING || TICKING.size || $('#sheet .cedit'));
+async function cloudStamp() {
+  if (FX) return 'fx' + (FX.rev || 0);
+  try {
+    const rs = await Promise.all(['wa_leads', 'jobs', 'tasks', 'customers', 'payments', 'calls'].map((t) => sb.from(t).select('updated_at').order('updated_at', { ascending: false }).limit(1)));
+    return rs.map((r) => (r.error ? 'x' : (r.data && r.data[0] || {}).updated_at || '')).join('|');
+  } catch (e) { return null; }
+}
+async function refreshNow(minAge) {
+  if (!BOOTED || document.hidden || refreshing || navigator.onLine === false || Date.now() - lastLoad < (minAge || 0) || midWork()) return false;
+  refreshing = true; lastLoad = Date.now(); const seq = WSEQ;
+  try {
+    const st = await cloudStamp(); if (st == null || st === STAMP) return false;
+    if (!(await load(() => WSEQ !== seq || midWork()))) return false;
+    STAMP = st; renderAll(); refreshOpenSheet(true); return true;
+  } catch (e) { console.warn(e); return false; } finally { refreshing = false; }
+}
+document.addEventListener('visibilitychange', () => { if (!FX || REFRESH_MS) refreshNow(FX ? 0 : 30000); if (!document.hidden && BOOTED && !FX) scanRequest(true); });
+if (REFRESH_MS) setInterval(() => refreshNow(0), REFRESH_MS);
+/* ---------- רענון ידני + סריקה מהמחשב (11.11, אור: "כפתור רענון ידני, כאילו סריקה ידנית", וגם לבד כשמישהו נכנס) ----------
+   הכפתור עושה שני דברים: (1) טוען מחדש את כל הלוח מהענן, מיד. (2) מבקש מהמחשב (המק עם הוואטסאפ) לסרוק עכשיו — אותה
+   בקשה של "סרוק עכשיו" באפליקציה (טבלת scan_requests; המק בודק כל 20 שניות). כשהסריקה מסתיימת הלוח נטען שוב לבד.
+   בלמים: ידני — לא יותר מסריקה ב-10 דקות; אוטומטי בכניסה — רק אם הסריקה האחרונה בת יותר משעה; ואף פעם לא בקשה שנייה כשיש אחת בדרך.
+   מי שאינו אור: הבקשה נרשמת על שם אור (רק כך המק לוקח אותה). היום הענן חוסם את זה — יעבוד רק אחרי אישור כללי-הצוות (sql/016). */
+const OR_ID = '2f8efb6f-3f81-4f1a-b7f9-c654bb4c0667', SCAN_GAP_MIN = 10, AUTO_SCAN_MIN = 60, SCAN_POLL = FX ? +FX.scanPoll || 8000 : 8000;
+const SCAN = { row: null, msg: '', busy: false, live: false, autoAt: 0 };
+let scanT = null, scanT0 = 0, scanClr = null;
+const lastScanAt = () => D.leads.reduce((m, l) => Math.max(m, T(l.scanned_at) || 0), 0);
+function scanPaint() {
+  const el = $('#scanLine'); if (!el) return;
+  const last = lastScanAt(), idle = last ? 'וואטסאפ נסרק ' + ago(last) : '';
+  el.textContent = SCAN.msg || idle; el.hidden = !(SCAN.msg || idle); el.classList.toggle('idle', !SCAN.msg); el.classList.toggle('live', SCAN.live);
+  $$('[data-refresh]').forEach((b) => { b.classList.toggle('spin', SCAN.busy || SCAN.live); });
+}
+function scanSay(msg, clearAfter) { SCAN.msg = msg || ''; clearTimeout(scanClr); if (clearAfter) scanClr = setTimeout(() => { SCAN.msg = ''; scanPaint(); }, clearAfter); scanPaint(); }
+const scanActive = (r) => !!r && (r.status === 'pending' || (r.status === 'running' && Date.now() - (T(r.started_at) || T(r.requested_at)) < 30 * 60000));
+function scanText(r) {
+  if (!r) return '';
+  if (r.status === 'pending') return Date.now() - T(r.requested_at) > 2 * 60000 ? 'המחשב עוד לא לקח את בקשת הסריקה. כנראה הוא כבוי או במצב שינה — הסריקה תרוץ כשיתעורר.' : 'ביקשתי מהמחשב לסרוק וואטסאפ ושיחות. מחכה שייקח את הבקשה (עד חצי דקה)…';
+  if (r.status === 'running') return 'המחשב סורק עכשיו וואטסאפ ושיחות' + (r.started_at ? ' (התחיל ב-' + hm(r.started_at) + ')' : '') + '. זה לוקח כמה דקות, והלוח יתעדכן לבד.';
+  if (r.status === 'done') return 'הסריקה הסתיימה' + (r.finished_at ? ' ב-' + hm(r.finished_at) : '') + '. הלוח מעודכן.';
+  return 'הסריקה במחשב נכשלה. אפשר לנסות שוב.';
+}
+// הבקשה האחרונה: שורה / null (אין) / undefined (לא הצלחתי לבדוק)
+async function scanLatest() {
+  if (FX) { const t = fxTable('scan_requests'); return t.length ? t[t.length - 1] : null; }
+  try { const r = await sb.from('scan_requests').select('id,status,requested_at,started_at,finished_at,message').order('requested_at', { ascending: false }).limit(1); return r.error ? undefined : (r.data && r.data[0]) || null; } catch (e) { return undefined; }
+}
+// true = נשלחה · 'deny' = לחשבון הזה הענן לא מרשה לבקש (עד שמאשרים את כללי-הצוות) · false = כשל
+async function scanAsk() {
+  if (FX) { if (FX.scanDeny) return 'deny'; if (fxFail('insert', 'scan_requests')) return false; fxTable('scan_requests').push({ id: uuid(), status: 'pending', requested_at: new Date().toISOString() }); FX.scans = (FX.scans || 0) + 1; return true; }
+  try { const { error } = await sb.from('scan_requests').insert(D.uid === OR_ID ? {} : { user_id: OR_ID }); if (!error) return true; console.warn('scan_requests', error); return /42501|row-level security/i.test((error.code || '') + ' ' + (error.message || '')) ? 'deny' : false; } catch (e) { return false; }
+}
+// auto = בכניסה ללוח (שקט, בלם של שעה). ידני = מהכפתור: מחזיר משפט קצר להודעה
+async function scanRequest(auto) {
+  if (!BOOTED || !isOwner() || navigator.onLine === false) return '';
+  if (auto) { if (document.hidden || Date.now() - SCAN.autoAt < 10 * 60000) return ''; SCAN.autoAt = Date.now(); }
+  const row = await scanLatest(); if (row === undefined) return auto ? '' : 'הלוח רוענן. את המחשב לא הצלחתי לשאול על סריקה';
+  SCAN.row = row;
+  if (scanActive(row)) {
+    if (auto && row.status === 'pending' && Date.now() - T(row.requested_at) > 60 * 60000) return '';   // המחשב כבוי כבר שעה — לא מציקים בכל כניסה
+    scanSay(scanText(row)); scanWatch(); return 'הלוח רוענן. כבר יש סריקה בדרך';
+  }
+  const last = Math.max(lastScanAt(), row ? T(row.finished_at) || T(row.requested_at) || 0 : 0), gap = (auto ? AUTO_SCAN_MIN : SCAN_GAP_MIN) * 60000;
+  if (last && Date.now() - last < gap) return 'הלוח רוענן. וואטסאפ נסרק ' + ago(last) + ', אז לא ביקשתי סריקה נוספת';
+  const r = await scanAsk();
+  if (r === 'deny') return auto ? '' : 'הלוח רוענן. סריקה מהמחשב אפשר לבקש כרגע רק מהחשבון של אור';
+  if (!r) return auto ? '' : 'הלוח רוענן. בקשת הסריקה לא נשלחה — בדוק רשת ונסה שוב';
+  SCAN.row = { status: 'pending', requested_at: new Date().toISOString() }; scanSay(scanText(SCAN.row)); scanWatch();
+  return 'הלוח רוענן, וביקשתי מהמחשב סריקה טרייה';
+}
+function scanStop() { clearInterval(scanT); scanT = null; SCAN.live = false; scanPaint(); }
+function scanWatch() {
+  if (scanT) return; scanT0 = Date.now(); SCAN.live = true; scanPaint();
+  scanT = setInterval(async () => {
+    if (document.hidden) return;
+    if (Date.now() - scanT0 > 15 * 60000) { scanStop(); return; }   // רבע שעה בלי סוף — מפסיקים לשאול; ההודעה נשארת
+    const row = await scanLatest(); if (row === undefined || !scanT) return; SCAN.row = row;
+    if (scanActive(row)) { scanSay(scanText(row)); return; }
+    scanStop();
+    if (row && row.status === 'done') { await hardRefresh(); scanSay(scanText(row), 30000); } else scanSay(row ? scanText(row) : '', 30000);
+  }, SCAN_POLL);
+}
+// טעינה מלאה מהענן, גם אם שום חותמת לא השתנתה. לא באמצע פעולה/אשף/עריכה
+async function hardRefresh() {
+  if (refreshing || midWork()) return false;
+  refreshing = true; lastLoad = Date.now(); const seq = WSEQ;
+  try { const st = await cloudStamp(); if (!(await load(() => WSEQ !== seq || midWork()))) return false; if (st != null) STAMP = st; renderAll(); refreshOpenSheet(true); return true; }
+  catch (e) { console.warn(e); return false; } finally { refreshing = false; }
+}
+async function refreshClick() {
+  if (!BOOTED) { location.reload(); return; }
+  if (navigator.onLine === false) return toast('אין חיבור לאינטרנט כרגע');
+  if (midWork()) return toast('יש פעולה פתוחה. מסיימים אותה ואז מרעננים');
+  if (SCAN.busy) return; SCAN.busy = true; scanPaint();
+  try {
+    if (!(await hardRefresh())) { toast('לא הצלחתי לרענן. בדוק רשת ונסה שוב'); return; }
+    toast((await scanRequest(false)) || 'הלוח רוענן מהענן');
+  } finally { SCAN.busy = false; scanPaint(); }
+}
+$$('[data-refresh]').forEach((b) => b.addEventListener('click', refreshClick));
+// אין חיבור: פס קטן למעלה. כשהחיבור חוזר — מרעננים (ואם הלוח בכלל לא נטען, טוענים את הדף מחדש)
+const netState = () => { $('#offline').hidden = navigator.onLine !== false; };
+addEventListener('offline', netState);
+addEventListener('online', () => { netState(); if (FX) return; if (!BOOTED && $('#gate').hidden) location.reload(); else refreshNow(0); });
+netState();
 boot();

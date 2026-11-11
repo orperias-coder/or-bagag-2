@@ -244,6 +244,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .lr .arr{width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:2}
 .lr.dim{opacity:.55}
 .urg{font-size:.7rem;font-weight:600;color:#fff;background:var(--late);border-radius:99px;padding:1px 7px;margin-inline-start:6px;vertical-align:middle}
+.offline{position:fixed;top:0;left:0;right:0;z-index:40;background:var(--late);color:#fff;text-align:center;font-size:.86rem;font-weight:600;padding:6px 14px}
+.again{font-size:.72rem;font-weight:600;color:var(--wa-deep);background:#e6f4ec;border-radius:99px;padding:1px 7px;margin-inline-end:6px}
 .lmore{border:0;border-top:1px solid #f1edf8;background:#faf8fe;font-weight:500;padding:10px;cursor:pointer}
 .lrows .empty{border:0;border-radius:0}
 .older{color:var(--muted);font-size:.85rem}
@@ -252,6 +254,28 @@ button,input,select,textarea{font:inherit;color:inherit}
 .linkb{border:0;background:none;padding:0;font:inherit;color:var(--lav-deep);font-weight:500;cursor:pointer;text-decoration:underline}
 .cool{background:#eef3fa;border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .cool .ct{font-size:.9rem;font-weight:600;color:#4a6f9e}
+/* 11.11 — פינג-פונג: תגיות, רצועת-מתקררים מתקפלת, הצעת-הסריקה, כפתור רענון ושורת-הסריקה */
+details.cool{display:block}
+details.cool>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;min-height:30px}
+details.cool>summary::-webkit-details-marker{display:none}
+details.cool>summary::after{content:"";width:8px;height:8px;border:solid #4a6f9e;border-width:0 2px 2px 0;transform:rotate(45deg);margin-inline-start:auto;transition:transform .25s}
+details.cool[open]>summary::after{transform:rotate(-135deg)}
+details.cool>.crow{margin-top:8px}
+.again.nudge{color:#8a5a00;background:#fdf1d6}
+.again.askc{color:var(--lav-deep);background:#ece8fb}
+.again.whyc{color:#5d5670;background:#efecf5}
+.sugg{background:#f3f0fd;border:1px solid #ddd5f7;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.sugg p{margin:0;font-size:.9rem}
+.sheet .hint2{font-size:.82rem;color:var(--muted);margin:0}
+.rfb{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.rfb svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rfb.spin svg{animation:rfspin 1s linear infinite}
+@keyframes rfspin{to{transform:rotate(-360deg)}}
+.mtop .rfb{min-height:34px;min-width:40px;padding:4px 10px}
+.scanline{font-size:.84rem;color:#4a4560;background:#efeafb;border-radius:14px;padding:9px 13px;line-height:1.45}
+.scanline.live{animation:breathe 2.4s ease-in-out infinite;--c:var(--lav)}
+.scanline.idle{background:none;padding:0 4px;color:var(--muted);font-size:.78rem;text-align:center}
+@media (min-width:901px){.scanline.idle{display:none}}
 .crow{background:#fff;border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .crow .tt,.ar .tt{display:flex;flex-direction:column;min-width:0}
 .crow .nm,.ar .nm{font-weight:600}
@@ -407,11 +431,12 @@ button,input,select,textarea{font:inherit;color:inherit}
     <a href="./" aria-label="לאפליקציה" style="align-self:center"><img class="logo" src="logo.png" alt="אור בגג"></a>
     <div class="me"><div class="avatar" id="avatar" style="--w:var(--or)">א</div><b id="meName"></b></div>
     <nav class="nav" id="nav"></nav>
-    <div class="foot"><button class="btn" type="button" data-morning>סידור הבוקר</button><a class="btn" href="home.html" data-owner hidden>לוח הבית</a><a class="btn" href="./">לאפליקציה</a><span class="status" id="status"></span></div>
+    <div class="foot"><button class="btn rfb" type="button" data-refresh><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg>רענון וסריקה</button><button class="btn" type="button" data-morning>סידור הבוקר</button><a class="btn" href="home.html" data-owner hidden>לוח הבית</a><a class="btn" href="./">לאפליקציה</a><span class="status" id="status"></span></div>
   </aside>
 
   <div class="wrap">
-    <div class="mtop"><a href="./" aria-label="לאפליקציה"><img class="logo" src="logo.png" alt="אור בגג"></a><span class="who" id="meName2"></span><a class="btn" href="home.html" data-owner hidden style="min-height:34px;padding:4px 12px">הבית</a></div>
+    <div class="mtop"><a href="./" aria-label="לאפליקציה"><img class="logo" src="logo.png" alt="אור בגג"></a><span class="who" id="meName2"></span><button class="btn rfb" type="button" data-refresh aria-label="רענון וסריקה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button><a class="btn" href="home.html" data-owner hidden style="min-height:34px;padding:4px 12px">הבית</a></div>
+    <div class="scanline" id="scanLine" role="status" hidden></div>
 
     <div class="gate" id="gate" hidden><h2>צריך להתחבר</h2><p>הלוח משתמש באותה התחברות של האפליקציה. מתחברים שם פעם אחת, וחוזרים לכאן.</p><a class="btn go" href="./">להתחברות באפליקציה</a></div>
 
@@ -515,8 +540,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 <div class="scrim" id="scrim"></div>
 <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shT" hidden></aside>
 <div class="mw" id="mw" role="dialog" aria-modal="true" aria-labelledby="mwT" hidden><div class="card" id="mwc"></div></div>
+<div class="offline" id="offline" role="status" hidden>אין חיבור לאינטרנט. מה שמוצג אולי לא מעודכן, ושינויים לא יישמרו עד שהחיבור יחזור.</div>
 <div class="toast" id="toast" role="status"><span id="tmsg"></span><button id="undo" type="button">ביטול</button></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="vendor/supabase-2.119.0.min.js"></script>
 <script src="board.js"></script>
 </body>
 </html>
