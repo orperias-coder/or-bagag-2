@@ -82,7 +82,7 @@ body{margin:0;background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 75%) fix
     <p class="foot" id="foot"></p>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="vendor/supabase-2.119.0.min.js"></script>
 <script>
 /* לוח הבית — קריאה בלבד. הנתונים מגיעים מהמק (home_bank.py, פעם ביום); הדף לא נוגע ב-Financy ואין בו מפתחות. */
 const SB_URL='https://wxnmujdcrqsgokzlptkh.supabase.co',SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bm11amRjcnFzZ29remxwdGtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDE3ODMsImV4cCI6MjA5NjU3Nzc4M30.R84NdsvQi5tMSJC51k4SxeVK364JQL1eZau0r9_V_ew';
@@ -114,7 +114,7 @@ function recurring(tx){   // אותו תיאור (בלי ספרות) ב-2 חוד
   const h=new Date().getHours();$('#hello').textContent=(h<12?'בוקר טוב':h<17?'צהריים טובים':'ערב טוב')+', '+me+'. זה מצב חשבון הבית בפועלים.';
   const chk=d.acc.find(a=>String(a.id).includes(':checking:')),cards=d.acc.filter(a=>String(a.id).includes(':card:'));
   if(chk&&chk.balance!=null){$('#bal').textContent=shek(chk.balance);$('#bal').classList.toggle('neg',chk.balance<0);$('#balAt').textContent='נכון ל-'+dm(String(chk.balance_at||'').slice(0,10))}
-  const tx=d.tx, mon=ym(new Date().toISOString().slice(0,10)), thisM=tx.filter(x=>ym(x.booked)===mon);
+  const tx=d.tx, _n=new Date(), mon=_n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0'), thisM=tx.filter(x=>ym(x.booked)===mon);
   const inM=thisM.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0), outM=thisM.filter(x=>x.amount<0).reduce((s,x)=>s+x.amount,0);
   const cardDue=cards.reduce((s,a)=>s+(+a.balance||0),0);
   $('#tiles').innerHTML=[

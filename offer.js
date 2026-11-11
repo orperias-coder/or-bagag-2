@@ -47,13 +47,17 @@ const api = {
     if (FX) {
       FX.writes.push(['update', t, id, patch]); if (FX.failNext) { FX.failNext = false; return false; }
       const r = (FX.server[t] || []).find((x) => x.id === id); if (!r) return false;
-      if (expect && Object.entries(expect).some(([k, v]) => r[k] !== v)) return 'changed';
-      Object.assign(r, JSON.parse(JSON.stringify(patch))); return true;
+      if (expect && Object.entries(expect).some(([k, v]) => (r[k] == null ? null : r[k]) !== v)) return 'changed';
+      Object.assign(r, JSON.parse(JSON.stringify(patch))); api.at = r.updated_at; return true;
     }
     let q = sb.from(t).update(patch).eq('id', id); if (expect) Object.entries(expect).forEach(([k, v]) => { q = v == null ? q.is(k, null) : q.eq(k, v); });
-    const { data, error } = await q.select('id');
+    const { data, error } = await q.select('id,updated_at');
     if (error) { console.warn(t, error); return false; } if (!data || !data.length) return expect ? 'changed' : false;
-    log(t, id, 'update', patch); return true;
+    api.at = data[0].updated_at; log(t, id, 'update', patch); return true;
+  },
+  async stamp(t, id) {   // חותמת-העדכון של שורה בענן, כמו שהיא עכשיו (null = לא הצלחתי לבדוק)
+    if (FX) { const r = (FX.server[t] || []).find((x) => x.id === id); return r ? r.updated_at || '' : null; }
+    try { const { data, error } = await sb.from(t).select('updated_at').eq('id', id).maybeSingle(); return error || !data ? null : data.updated_at || ''; } catch (e) { return null; }
   },
   async nextNumber() {   // הפונקציה בענן (sql/001) סופרת לפי המשתמש המחובר: אצל זהרי הייתה פותחת מונה משלה (001…) → מספרים כפולים. לכן רק אור מושך מספר; הצעה של זהרי מקבלת מספר כשאור שולח
     if (!S.canSend) return null;
@@ -106,10 +110,30 @@ function blank() {
 function use(q, saved) { S.Q = JSON.parse(JSON.stringify(q)); S.Q.items = S.Q.items || []; S.saved = saved; S.base = saved ? JSON.parse(JSON.stringify(q)) : null; S.versioned = false; S.opened = ''; }
 
 /* ---------- שמירה: טיוטה נשמרת תוך כדי; אחרי "נשלחה" — הגרסה הקודמת נשמרת פעם אחת לפני השינוי הראשון ---------- */
-function changed() { setSaved('שומר…'); clearTimeout(S.dirtyT); S.dirtyT = setTimeout(save, 700); }
+function changed() { if (S.stale) return setSaved(STALE_S, true); setSaved('שומר…'); clearTimeout(S.dirtyT); S.dirtyT = setTimeout(save, 700); }
+// 10.11: שמירה שלא דורסת. (1) לענן נשלחים רק שדות ששונו בחלון הזה; (2) מצב ההצעה (טיוטה/נשלחה/אושרה) נכתב רק מהכפתורים שלו;
+// (3) לפני שמירה בודקים שההצעה לא שונתה במכשיר אחר מאז שנטענה כאן (updated_at) — אם שונתה: לא דורסים, מודיעים.
+const STALE = 'ההצעה הזאת שונתה במכשיר אחר. כדי לא לדרוס אותה, כאן לא נשמר יותר. מרעננים את הדף וממשיכים מהגרסה העדכנית.', STALE_S = 'שונתה במכשיר אחר · צריך לרענן את הדף';
+const NOT_CONTENT = ['id', 'created_at', 'updated_at', 'status', 'sent_at'];
+const same = (a, b) => JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+const diffOf = (q, b) => { const p = {}; Object.keys(q).forEach((k) => { if (!NOT_CONTENT.includes(k) && !same(q[k], b[k])) p[k] = q[k]; }); return p; };
+function goStale() { S.stale = true; clearTimeout(S.dirtyT); S.dirtyT = null; setSaved(STALE_S, true); toast(STALE); return false; }
+// עדכון של ההצעה רק אם בענן היא עדיין כמו שנטענה כאן. true / false (רשת) / 'changed'
+async function putQuote(patch, extra) {
+  patch = JSON.parse(JSON.stringify(patch));   // צילום של מה שנשלח: הקלדה בזמן השמירה לא נחשבת "נשמרה"
+  const at = S.base.updated_at || null, exp = { ...(extra || {}), ...(at ? { updated_at: at } : {}) };
+  let r = await api.update('quotes', S.Q.id, patch, Object.keys(exp).length ? exp : null);
+  if (r === 'changed' && at) {   // מוודאים בקריאה: "שונתה במכשיר אחר" רק אם החותמת בענן באמת אחרת (או שהמצב שם כבר אחר)
+    const now = await api.stamp('quotes', S.Q.id); if (now == null) return false;
+    if (now === at) r = await api.update('quotes', S.Q.id, patch, extra || null);
+  }
+  if (r === true) { S.Q.updated_at = api.at || S.Q.updated_at; Object.assign(S.base, patch, { updated_at: S.Q.updated_at }); }
+  return r;
+}
 function setSaved(t, bad) { const e = $('#saved'); e.textContent = t; e.classList.toggle('bad', !!bad); }
 async function save() {
   clearTimeout(S.dirtyT); S.dirtyT = null;
+  if (S.stale) { setSaved(STALE_S, true); toast(STALE); return false; }
   if (S.saving) { await S.saving; if (!S.dirtyT) return save0(); return true; }
   return save0();
 }
@@ -120,18 +144,20 @@ async function save0() {
     let ok;
     if (!S.saved) {
       if (!q.number) q.number = await api.nextNumber();
-      const row = { ...q }; delete row.created_at;
-      ok = await api.insert('quotes', row); if (ok) { S.saved = true; S.quotes.unshift(q); }
+      const row = JSON.parse(JSON.stringify(q)); delete row.created_at;
+      ok = await api.insert('quotes', row);
+      if (ok) { S.saved = true; S.quotes.unshift(q); try { history.replaceState(null, '', '?job=' + encodeURIComponent(q.job_id) + '&q=' + encodeURIComponent(q.id)); } catch (e) { /* רענון של "?new=1" לא יפתח עוד הצעה ריקה */ } S.base = { ...row, created_at: q.created_at }; if (Object.keys(diffOf(q, S.base)).length) changed(); else setSaved(label() + ' · נשמר'); head(); return true; }
     } else {
+      if (!Object.keys(diffOf(q, S.base)).length) { setSaved(label() + ' · נשמר'); return true; }   // לא שונה כלום — לא כותבים
       if (q.status !== 'draft' && !S.versioned) {
         const v = await api.insert('quote_versions', { id: uuid(), quote_id: q.id, version: S.base.version || 1, snapshot: S.base });
         if (!v) { setSaved('לא נשמר. בדוק רשת', true); return false; }
         S.versioned = true; q.version = (S.base.version || 1) + 1;
       }
-      const { id, created_at, ...patch } = q;   // eslint-disable-line no-unused-vars
-      ok = await api.update('quotes', q.id, patch);
+      ok = await putQuote(diffOf(q, S.base));
+      if (ok === 'changed') return goStale();
+      if (ok === true) { setSaved(label() + ' · נשמר'); head(); return true; }
     }
-    if (ok === true) { S.base = JSON.parse(JSON.stringify(q)); setSaved(label() + ' · נשמר'); head(); return true; }
     setSaved('לא נשמר. בדוק רשת', true); return false;
   })();
   S.saving = run; try { return await run; } finally { S.saving = null; }
@@ -252,7 +278,49 @@ $('#b-send').onclick = async () => {
   $('#send-t').textContent = 'לשלוח ל' + (firstName() || 'לקוח'); $('#msg').value = shareText();
   $('#att-name').textContent = `הצעת מחיר ${S.Q.number || ''} - ${(S.cust && S.cust.name) || ''}.pdf`.replace(/\s+/g, ' ');
   $('#b-mail').textContent = S.cust && S.cust.email ? 'פתח מייל' : 'פתח מייל (אין כתובת)';
-  openSh('#sh-send');
+  openSh('#sh-send'); pdfFile().catch(() => {});   // מכינים מראש, כך שהלחיצה על "שתף" משתפת מיד
+};
+
+/* ---------- PDF לשיתוף (09.11, אור: "כפתור שתף עם PDF, תעשה את זה") ----------
+   הטלפון משתף קובץ רק מתוך לחיצה, ולכן ה-PDF מוכן כבר כשהחלונית נפתחת. במחשב (אין שיתוף קבצים) — הקובץ יורד. */
+const H2P = 'vendor/html2pdf.bundle.min.js';   // html2pdf.js 0.10.1, עותק באתר (בלי תלות ב-CDN)
+let h2pLoad = null, pdfMemo = null;
+const loadH2p = () => h2pLoad || (h2pLoad = new Promise((ok, no) => {
+  const s = document.createElement('script'); s.src = H2P; s.onload = () => ok(window.html2pdf); s.onerror = () => { h2pLoad = null; s.remove(); no(new Error('lib')); }; document.head.appendChild(s);
+}));
+const pdfName = () => `הצעת מחיר ${S.Q.number || ''} - ${(S.cust && S.cust.name) || ''}.pdf`.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+async function makePdf() {
+  const h2p = await loadH2p();
+  const box = document.createElement('div'); box.style.cssText = 'position:fixed;left:-10000px;top:0;width:740px;background:#fff';
+  const p = $('#paper').cloneNode(true); p.removeAttribute('id'); p.style.cssText = 'transform:none;box-shadow:none;border-radius:0;padding:0;font-size:11pt;background:#fff';
+  box.appendChild(p); document.body.appendChild(box);
+  // בלי זה הספרייה מאבדת רווחים בין מילים בעברית; כך כל אות מצוירת בדיוק במקום שהדפדפן שם אותה
+  [p, ...p.querySelectorAll('*')].forEach((el) => { el.style.letterSpacing = '0.01px'; });
+  try {
+    const blob = await h2p().set({ margin: 12, image: { type: 'jpeg', quality: 0.92 }, html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4' }, pagebreak: { mode: ['css', 'avoid-all'] } }).from(p).outputPdf('blob');
+    return new File([blob], pdfName(), { type: 'application/pdf' });
+  } finally { box.remove(); }
+}
+// אותו PDF כל עוד ההצעה לא השתנתה
+function pdfFile() {
+  const key = JSON.stringify([S.Q, S.cust]);
+  if (!pdfMemo || pdfMemo.key !== key) { pdfMemo = { key, p: makePdf() }; pdfMemo.p.catch(() => { if (pdfMemo && pdfMemo.key === key) pdfMemo = null; }); }
+  return pdfMemo.p;
+}
+function download(f) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+$('#b-share').onclick = async (e) => {
+  const b = e.currentTarget; if (b.disabled) return;
+  const text = $('#msg').value; try { navigator.clipboard && navigator.clipboard.writeText(text).catch(() => {}); } catch (_) { /* בלי העתקה */ }
+  b.disabled = true; const t0 = b.textContent; b.textContent = 'מכין PDF…';
+  try {
+    const f = await pdfFile();
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f], title: f.name, text }); opened('בשיתוף'); }
+      catch (er) { if (er && er.name === 'NotAllowedError') toast('ה-PDF מוכן. לוחצים שוב "שתף עם PDF"'); else if (!er || er.name !== 'AbortError') throw er; }
+    } else { download(f); toast('ה-PDF ירד, וההודעה הועתקה. מצרפים אותו בוואטסאפ או במייל'); }
+  } catch (er) { console.warn('pdf', er); toast('לא הצלחתי להכין PDF. אפשר "לשמור PDF"'); }
+  finally { b.disabled = false; b.textContent = t0; }
 };
 function opened(how) { S.opened = how; close(); bar(); toast('אחרי שההודעה יצאה, לוחצים "✓ נשלחה"'); }
 $('#b-go').onclick = () => { const h = waHref(S.cust && S.cust.phone, $('#msg').value); if (!h) return toast('אין טלפון ללקוח. מוסיפים בפרטי הלקוח'); window.open(h, '_blank', 'noopener'); opened('בוואטסאפ'); };
@@ -270,42 +338,60 @@ async function setJob(patch, okFrom) {
   if (!r) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
   Object.assign(S.job, patch); return true;
 }
+// מצב ההצעה: נכתב רק מכאן, ורק אם בענן המצב עדיין "from". קודם העבודה ואז ההצעה (10.11): אם השלב השני נכשל,
+// ההצעה נשארת במצב הקודם, הכפתור נשאר על המסך, ולחיצה נוספת משלימה — בלי מצב-ביניים שאי-אפשר לצאת ממנו.
+async function setStatus(patch, from) {
+  const r = await putQuote(patch, { status: from });
+  if (r === 'changed') return goStale();
+  if (!r) { toast('לא נשמר. בדוק רשת ונסה שוב'); return false; }
+  Object.assign(S.Q, patch); const o = S.quotes.find((x) => x.id === S.Q.id); if (o && o !== S.Q) Object.assign(o, patch);
+  return true;
+}
 $('#b-did').onclick = async (e) => {
   const b = e.currentTarget; if (b.disabled || S.Q.status !== 'draft') return;
+  if (S.stale) return toast(STALE);
   if (!confirm('לסמן שההצעה נשלחה ללקוח?\nהכרטיס בלוח יעבור ל"הצעה נשלחה" ומתחילים לספור ימים.')) return;
   b.disabled = true;
   try {
     if (!S.Q.number) S.Q.number = await api.nextNumber();
-    const now = new Date().toISOString(); S.Q.status = 'sent'; S.Q.sent_at = now;
-    S.versioned = true;   // הסימון עצמו אינו "שינוי" שדורש גרסה
-    if (!(await save())) { S.Q.status = 'draft'; S.Q.sent_at = null; S.versioned = false; bar(); return; }
-    if (await setJob({ stage: 'sent', stage_changed_at: now, quote_sent_at: now }, ['lead', 'visit', 'quote', 'sent'])) { log('jobs', S.job.id, 'stage', { stage: 'sent', by: S.me }); toast('סומן: נשלחה. הכרטיס עבר ל"הצעה נשלחה"'); }
-    S.versioned = false; S.base = JSON.parse(JSON.stringify(S.Q)); draw();
+    if (!(await save())) return;   // התוכן (והמספר) נשמר לפני שינוי המצב
+    const now = new Date().toISOString();
+    if (!(await setJob({ stage: 'sent', stage_changed_at: now, quote_sent_at: now }, ['lead', 'visit', 'quote', 'sent']))) return;
+    if (!(await setStatus({ status: 'sent', sent_at: now }, 'draft'))) return;
+    log('jobs', S.job.id, 'stage', { stage: 'sent', by: S.me }); toast('סומן: נשלחה. הכרטיס עבר ל"הצעה נשלחה"'); draw();
   } finally { b.disabled = false; }
 };
 $('#b-ok').onclick = async (e) => {
   const b = e.currentTarget; if (b.disabled || S.Q.status !== 'sent') return;
+  if (S.stale) return toast(STALE);
   const k = calc(S.Q); if (!confirm(`הלקוח אישר את ההצעה על ${m(k.total)}?\nהכרטיס יעבור ל"לביצוע".`)) return;
   b.disabled = true;
   try {
-    S.Q.status = 'accepted'; S.versioned = true;
-    if (!(await save())) { S.Q.status = 'sent'; S.versioned = false; bar(); return; }
+    const v0 = S.versioned; S.versioned = true;   // הסימון עצמו אינו "שינוי" שדורש גרסה
+    const saved = await save(); S.versioned = v0; if (!saved) return;
     const now = new Date().toISOString();
-    if (await setJob({ stage: 'approved', stage_changed_at: now, approved_at: now, price_agreed: Math.round(k.total * 100) / 100 }, ['lead', 'visit', 'quote', 'sent'])) toast('מעולה. הכרטיס עבר ל"לביצוע"');
-    S.versioned = false; S.base = JSON.parse(JSON.stringify(S.Q)); draw();
+    if (!(await setJob({ stage: 'approved', stage_changed_at: now, approved_at: now, price_agreed: Math.round(k.total * 100) / 100 }, ['lead', 'visit', 'quote', 'sent']))) return;
+    if (!(await setStatus({ status: 'accepted' }, 'sent'))) return;
+    toast('מעולה. הכרטיס עבר ל"לביצוע"'); draw();
   } finally { b.disabled = false; }
 };
 
 /* ---------- פרטי לקוח (תחילת ניהול לקוחות) ---------- */
-$('#b-edit').onclick = () => { const c = S.cust || {}; $('#e-name').value = c.name || ''; $('#e-phone').value = c.phone || ''; $('#e-mail').value = c.email || ''; $('#e-addr').value = c.address || ''; $('#e-note').value = c.notes || ''; openSh('#sh-edit'); };
+const EF = { name: '#e-name', phone: '#e-phone', email: '#e-mail', address: '#e-addr', notes: '#e-note' }; let E0 = null;   // E0 = מה שהוצג כשהטופס נפתח
+$('#b-edit').onclick = () => { const c = S.cust || {}; E0 = {}; Object.keys(EF).forEach((k) => { E0[k] = String(c[k] || '').trim() || (k === 'name' ? '' : null); }); $('#e-name').value = c.name || ''; $('#e-phone').value = c.phone || ''; $('#e-mail').value = c.email || ''; $('#e-addr').value = c.address || ''; $('#e-note').value = c.notes || ''; openSh('#sh-edit'); };
 $('#e-save').onclick = async (e) => {
   const b = e.currentTarget; if (b.disabled) return; const c = S.cust; if (!c || !c.id) return toast('אין כרטיס לקוח לעבודה הזו');
-  const patch = { name: $('#e-name').value.trim(), phone: $('#e-phone').value.trim() || null, email: $('#e-mail').value.trim() || null, address: $('#e-addr').value.trim() || null, notes: $('#e-note').value.trim() || null };
-  if (!patch.name) return toast('צריך שם');
-  if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) return toast('המייל לא נראה תקין');
+  const all = { name: $('#e-name').value.trim(), phone: $('#e-phone').value.trim() || null, email: $('#e-mail').value.trim() || null, address: $('#e-addr').value.trim() || null, notes: $('#e-note').value.trim() || null };
+  if (!all.name) return toast('צריך שם');
+  if (all.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(all.email)) return toast('המייל לא נראה תקין');
+  const patch = {}; Object.keys(all).forEach((k) => { if (!E0 || all[k] !== E0[k]) patch[k] = all[k]; });   // 10.11: רק מה ששונה בטופס — לא דורסים שדה שמישהו אחר עדכן
+  if (!Object.keys(patch).length) { close(); return toast('לא שונה כלום'); }
   b.disabled = true;
   try { if ((await api.update('customers', c.id, patch)) === true) { Object.assign(c, patch); close(); head(); paper(calc(S.Q)); toast('פרטי הלקוח נשמרו'); } else toast('לא נשמר. בדוק רשת ונסה שוב'); } finally { b.disabled = false; }
 };
 
+// 10.11: חיווי "אין חיבור"
+const netState = () => { $('#offline').hidden = navigator.onLine !== false; };
+addEventListener('offline', netState); addEventListener('online', netState); netState();
 window.addEventListener('beforeunload', (e) => { if (S.dirtyT || S.saving) { save(); e.preventDefault(); e.returnValue = ''; } });
 init();

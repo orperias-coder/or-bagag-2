@@ -134,6 +134,7 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
 .top img{height:40px}
 .tag{font:600 .74rem var(--f);padding:2px 9px;border-radius:99px;white-space:nowrap}
 .tag.sent{background:var(--sent-soft);color:#4d7424} .tag.draft{background:var(--quote-soft);color:var(--quote)} .tag.v{background:var(--lav-soft);color:var(--lav-deep)}
+.offline{position:fixed;top:0;left:0;right:0;z-index:60;background:var(--accent);color:#fff;text-align:center;font-size:.86rem;font-weight:600;padding:6px 14px}
 .saved.bad{color:var(--accent)} .saved.bad::before{background:var(--accent)}
 .qpick{display:flex;flex-wrap:wrap;gap:6px}
 @media print{
@@ -215,12 +216,13 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
 <div class="sheet" id="sh-send" aria-label="שליחה">
   <div class="sec-h"><h3 id="send-t">לשלוח</h3><button class="btn ghost sm" type="button" data-close>סגור</button></div>
   <textarea class="msgbox" id="msg" rows="5" aria-label="ההודעה ללקוח"></textarea>
-  <div class="att"><span class="pdf">PDF</span><div><b id="att-name"></b><div class="muted" style="font-size:.8rem">שומרים פעם אחת ומצרפים להודעה</div></div><button class="btn sm" type="button" id="b-pdf2" style="margin-inline-start:auto">לשמור PDF</button></div>
+  <div class="att"><span class="pdf">PDF</span><div><b id="att-name"></b><div class="muted" style="font-size:.8rem" id="att-st">ה-PDF מצורף לבד בשיתוף</div></div><button class="btn sm" type="button" id="b-pdf2" style="margin-inline-start:auto">לשמור PDF</button></div>
+  <button class="btn wa" type="button" id="b-share" style="min-height:52px;font-size:1.05rem">שתף עם PDF</button>
   <div style="display:flex;gap:8px">
-    <button class="btn wa" type="button" id="b-go" style="min-height:48px;flex:1">פתח וואטסאפ</button>
-    <button class="btn" type="button" id="b-mail" style="min-height:48px;flex:1">פתח מייל</button>
+    <button class="btn" type="button" id="b-go" style="min-height:44px;flex:1">וואטסאפ בלי PDF</button>
+    <button class="btn" type="button" id="b-mail" style="min-height:44px;flex:1">פתח מייל</button>
   </div>
-  <p class="note" style="margin:0">ההודעה נפתחת אצלך, ואתה לוחץ "שלח" שם. את ה-PDF מצרפים ידנית. השלב בלוח לא משתנה לבד: כשההודעה יצאה, לוחצים "✓ נשלחה".</p>
+  <p class="note" style="margin:0">"שתף" פותח את חלון השיתוף של הטלפון עם ה-PDF כבר מצורף: בוחרים וואטסאפ ואת הלקוח. ההודעה מועתקת, ואם וואטסאפ לא הכניס אותה, מדביקים. השלב בלוח לא משתנה לבד: כשההודעה יצאה, לוחצים "✓ נשלחה".</p>
 </div>
 <div class="sheet" id="sh-edit" aria-label="פרטי לקוח">
   <div class="sec-h"><h3>פרטי לקוח</h3><button class="btn ghost sm" type="button" data-close>סגור</button></div>
@@ -232,8 +234,9 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
   <button class="btn pri" type="button" id="e-save" style="min-height:46px">לשמור</button>
   <p class="note" style="margin:0">נשמר בכרטיס הלקוח, ומתעדכן בכל מקום שהלקוח מופיע: בלוח, בהצעה ובאפליקציה.</p>
 </div>
+<div class="offline" id="offline" role="status" hidden>אין חיבור לאינטרנט. שינויים לא יישמרו עד שהחיבור יחזור.</div>
 <div class="toast" id="toast" role="status"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="vendor/supabase-2.119.0.min.js"></script>
 <script src="offer.js"></script>
 </body>
 </html>

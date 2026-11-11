@@ -626,14 +626,23 @@ async function openWaMedia(jid, i) {
   if (m.type === 'video') { img.hidden = true; vid.hidden = false; vid.src = u; } else { vid.hidden = true; vid.removeAttribute('src'); img.hidden = false; img.src = u; }
   lb.hidden = false;
 }
+const WA2C = new Set();   // 10.11: פנייה שנמצאת באמצע פתיחה — לחיצה נוספת לא פותחת שוב
 async function waToCustomer(jid) {   // כמו "פנייה מהודעה": אותו טלפון = אותו לקוח; הפנייה נושאת את התקציר
-  const l = (D.waLeads || []).find((x) => x.jid === jid); if (!l) return; const d = l.data || {};
-  const phone = l.phone ? normPhone(String(l.phone).replace(/^\+?972/, '0')) : '';
-  let c = phone ? live(D.customers).find((x) => normPhone(x.phone) === phone) : null;
-  if (!c) c = await DB.save('customers', { name: l.name || phone || 'לקוח מוואטסאפ', phone: phone || null, address: d.address || null, source: 'וואטסאפ' });
-  const j = await DB.save('jobs', { customer_id: c.id, title: null, problem: [l.summary, d.problem].filter(Boolean).join('\n').slice(0, 2000) || null, stage: 'lead', stage_changed_at: new Date().toISOString() });
-  l.customer_id = c.id; await sb.from('wa_leads').update({ customer_id: c.id, updated_at: new Date().toISOString() }).eq('jid', jid);
-  show('job', { id: j.id }); toast('נפתח לקוח עם פנייה. אפשר "+ הצעת מחיר".');
+  if (WA2C.has(jid)) return; WA2C.add(jid);
+  try {
+    const l = (D.waLeads || []).find((x) => x.jid === jid); if (!l) return; const d = l.data || {};
+    // 10.11: קודם בודקים בענן אם הפנייה כבר קושרה ללקוח (מהלוח או ממכשיר אחר) — כדי לא לפתוח לקוח/פנייה כפולים
+    if (!l.customer_id && navigator.onLine !== false) { try { const r = await sb.from('wa_leads').select('customer_id').eq('jid', jid).maybeSingle(); if (r.data && r.data.customer_id) l.customer_id = r.data.customer_id; } catch (e) { /* בלי רשת — ממשיכים לפי מה שיש כאן */ } }
+    const phone = l.phone ? normPhone(String(l.phone).replace(/^\+?972/, '0')) : '';
+    let c = l.customer_id ? live(D.customers).find((x) => x.id === l.customer_id) : null;
+    if (l.customer_id && !c) return toast('לפנייה הזאת כבר נפתח לקוח במכשיר אחר. מרעננים ומנסים שוב.');
+    if (c) { const have = jobsOf(c.id).find((x) => x.stage === 'lead'); if (have) { show('job', { id: have.id }); return toast('לפנייה הזאת כבר נפתח לקוח. הנה הוא.'); } }   // לחיצה חוזרת — אותה פנייה, לא עוד אחת
+    if (!c && phone) c = live(D.customers).find((x) => normPhone(x.phone) === phone) || null;
+    if (!c) c = await DB.save('customers', { name: l.name || phone || 'לקוח מוואטסאפ', phone: phone || null, address: d.address || null, source: 'וואטסאפ' });
+    const j = await DB.save('jobs', { customer_id: c.id, title: null, problem: [l.summary, d.problem].filter(Boolean).join('\n').slice(0, 2000) || null, stage: 'lead', stage_changed_at: new Date().toISOString() });
+    if (l.customer_id !== c.id) { l.customer_id = c.id; await sb.from('wa_leads').update({ customer_id: c.id, updated_at: new Date().toISOString() }).eq('jid', jid).is('customer_id', null); }   // מותנה: לא דורסים קישור שמישהו אחר כבר עשה
+    show('job', { id: j.id }); toast('נפתח לקוח עם פנייה. אפשר "+ הצעת מחיר".');
+  } finally { WA2C.delete(jid); }
 }
 function openWaSheet(c) {
   const w = sheet('t-wa'); $('#wa-list', w).innerHTML = WA_TPL.map(([he, txt]) => `<a class="btn" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone, txt)}" data-close>${he}</a>`).join('') + `<a class="btn ghost" style="text-decoration:none;display:block;text-align:center" target="_blank" href="${waLink(c.phone)}" data-close>הודעה חופשית</a>`;
