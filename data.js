@@ -83,16 +83,35 @@ const DB = (() => {
     local(table, row);
     // לענן נשלחים רק השדות ששונו (patch) — כך שני מכשירים שעורכים שדות שונים באותו זמן לא דורסים זה את זה.
     // שורה חדשה נשלחת במלואה.
-    const cloudRow = isNew || table === 'settings' ? { ...row } : { ...patch }; for (const k of Object.keys(cloudRow)) if (k.startsWith('_')) delete cloudRow[k];
+    // הגדרות: רק מה ששונה, ולעולם לא מונה-ההצעות (רק הענן מקדם אותו — עותק ישן היה מחזיר אותו אחורה = מספר הצעה כפול)
+    const cloudRow = isNew ? { ...row } : { ...patch }; for (const k of Object.keys(cloudRow)) if (k.startsWith('_')) delete cloudRow[k];
     delete cloudRow.user_id; if (!isNew && !['settings', 'quote_versions', 'alerts'].includes(table)) cloudRow.updated_at = now;
-    if (table === 'settings') cloudRow.user_id = D.uid;
+    if (table === 'settings') { delete cloudRow.next_quote_number; delete cloudRow.quote_year; delete cloudRow.id; cloudRow.user_id = (D.settings && D.settings.user_id) || D.uid; }
     await enqueue({ op: isNew || table === 'settings' ? 'upsert' : 'update', table, row: cloudRow });
     await enqueue({ op: 'event', row: { entity: table, entity_id: table === 'settings' ? D.uid : row.id, action: isNew ? 'create' : 'update', device: DEVICE, diff: patch } });
     return row;
   }
+  // 14.11: לפני שינוי שדה רגיש (שלב, סעיפים, סכום) — בודקים שהענן עוד מסכים עם מה שעל המסך.
+  // אם מכשיר אחר (הלוח, זהרי) שינה בינתיים: טוענים מחדש ולא שומרים (false). בלי רשת / שינוי שלנו שעוד לא עלה — אין מול מה לבדוק (true).
+  const stable = (v) => Array.isArray(v) ? '[' + v.map(stable).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v ?? null);
+  async function guard(table, id, fields) {
+    if (!navigator.onLine || !id) return true;
+    try {
+      await sync();
+      if ((await qAll()).some((it) => it.table === table && it.row && it.row.id === id)) return true;
+      const { data, error } = await sb.from(table).select(fields.join(',')).eq('id', id).maybeSingle();
+      if (error || !data) return true;
+      const loc = (D[table] || []).find((x) => x.id === id) || {};
+      if (fields.every((f) => stable(data[f]) === stable(loc[f]))) return true;
+      console.warn('[guard] changed elsewhere', table, id, fields.filter((f) => stable(data[f]) !== stable(loc[f])));
+      try { await loadAll(); } catch (e) { local(table, { id, ...data }); }
+      return false;
+    } catch (e) { return true; }
+  }
   const trash = (table, id) => save(table, { id, deleted_at: new Date().toISOString() });
   const restore = (table, id) => save(table, { id, deleted_at: null });
   async function stage(jobId, st) {
+    if (!(await guard('jobs', jobId, ['stage']))) { if (typeof toast === 'function') toast('השלב שונה בינתיים במכשיר אחר — רעננתי, השלב לא שונה', 4000); return null; }
     const now = new Date().toISOString(); const patch = { id: jobId, stage: st, stage_changed_at: now };
     if (st === 'sent') patch.quote_sent_at = now; if (st === 'approved') patch.approved_at = now; if (st === 'doing') patch.started_at = now; if (st === 'paid') patch.paid_at = now;
     const row = await save('jobs', patch);
@@ -135,5 +154,5 @@ const DB = (() => {
   }
   setInterval(flushUsage, 10 * 60 * 1000); setTimeout(flushUsage, 15000);
   refreshPending();
-  return { used, flushUsage, save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid, _queue: qAll, _failed: fAll, _send: send };
+  return { used, flushUsage, guard, save, trash, restore, stage, loadAll, sync, uploadPhoto, photoUrl, pendingCount: () => pending, onChange: (f) => listeners.add(f), DEVICE, uuid, _queue: qAll, _failed: fAll, _send: send };
 })();

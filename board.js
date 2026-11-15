@@ -663,14 +663,27 @@ async function loadPhotos() {
   if (!box.isConnected) return;
   box.innerHTML = items.map((m) => PHURL[m.path] ? (m.type === 'video' ? `<a href="${esc(PHURL[m.path])}" target="_blank" rel="noopener" class="ph1 vid">▶</a>` : `<a href="${esc(PHURL[m.path])}" target="_blank" rel="noopener"><img class="ph1" src="${esc(PHURL[m.path])}" alt="" loading="lazy"></a>`) : '').join('');
 }
+// 14.11: "חזור" בטלפון סוגר את החלון הפתוח (כרטיס / אשף / תפריט / סידור הבוקר) במקום לצאת מהלוח.
+// כל חלון פתוח = רשומה אחת בהיסטוריה; סגירה רגילה (X, רקע, Esc) מחזירה אותה. IGN: חזרה שאנחנו ביקשנו — לא סוגרים כלום.
+let HIST = false, IGN = false, MWON = false;
+function histPush() { if (HIST || IGN || (navigator.userActivation && !navigator.userActivation.hasBeenActive)) return; try {   // לפני נגיעה ראשונה (סידור הבוקר שנפתח לבד) כרום מדלג על הרשומה — חזרה הייתה מוציאה מהלוח
+  history.pushState({ ob2: 'win' }, ''); HIST = true; } catch (e) {} }
+function histPop() { if (!HIST) return; HIST = false; IGN = true; try { history.back(); } catch (e) { IGN = false; } }
+addEventListener('popstate', () => {
+  if (IGN) { IGN = false; if (CUR || MWON) histPush(); return; }   // בינתיים נפתח חלון אחר — מחזירים לו רשומה
+  if (!HIST) return; HIST = false;
+  if (CUR) { if (WZ && !confirm('לצאת מהאשף? מה שכבר נשמר נשאר שמור.')) return histPush(); closeSheet(); }
+  else if (MWON) closeMorning();
+});
 function showSheet() {
+  histPush();
   const sh = $('#sheet'); sh.hidden = false; requestAnimationFrame(() => { sh.classList.add('on'); $('#scrim').classList.add('on'); $('#scrim').classList.toggle('wide', !!WZ); });
   $$('.lr.sel,.ai.sel').forEach((r) => r.classList.remove('sel'));
   if (CUR) { const r = document.querySelector(`[data-row="${CSS.escape(CUR.id)}"]`); if (r) r.classList.add('sel'); }
   const f = sh.querySelector('.main,input,[data-s]'); if (f && innerWidth > 900) f.focus({ preventScroll: true });
 }
 function closeSheet() {
-  const sh = $('#sheet'); sh.classList.remove('on'); $('#scrim').classList.remove('on'); CUR = null; WZ = null;
+  const sh = $('#sheet'); sh.classList.remove('on'); $('#scrim').classList.remove('on'); CUR = null; WZ = null; if (!MWON) histPop();
   $$('.lr.sel,.ai.sel').forEach((r) => r.classList.remove('sel'));
   setTimeout(() => { if (!sh.classList.contains('on')) sh.hidden = true; }, 450);
 }
@@ -940,7 +953,7 @@ async function openCard(w) {
   if (!j) {
     const prob = isOwner() ? w.problem : unmask(w.problem, w.raw);   // צוות: התיבה מוסתרת-סכומים; לענן לא נשמר "[סכום]" לעולם
     j = { id: w.ids.job, customer_id: c.id, title: short(prob, 60) || null, stage: 'lead', stage_changed_at: now, problem: prob || null, created_at: now, updated_at: now };
-    if (!(await dbInsert('jobs', j))) return false;
+    if (!(await dbInsert('jobs', j))) { if (claimed && (await tryUpdate('wa_leads', l.jid, claimed, 'jid', { customer_id: cid })) === true) Object.assign(l, claimed); return false; }   // 14.11: העבודה לא נוצרה → משחררים את הפנייה (אחרת נעלמת). הלקוח שנוצר נמצא שוב בניסיון הבא לפי הטלפון
     if (!isOwner()) j = { ...j, problem: noMoney(j.problem), title: noMoney(j.title) };   // צוות: בענן נשמר המקור, במסך — בלי סכומים (ביקורת לוח 3)
     if (!D.jobs.find((x) => x.id === j.id)) D.jobs.push(j); dirty();
   }
@@ -987,7 +1000,7 @@ function reloadSoon() { clearTimeout(reloadT); reloadT = setTimeout(async () => 
 // אחרי רענון: חלונית פתוחה (לא אשף) נבנית מחדש מהנתונים הטריים, כדי שהפעולה הבאה לא תיגע בעותק ישן
 // soft = רענון-רקע שקט: הכרטיס נשאר פתוח באותו מקום. אם הפריט כבר לא ברשימות (טופל במכשיר אחר) — לא סוגרים מתחת לידיים, רק מחליפים את הכפתורים בהסבר.
 function refreshOpenSheet(soft) {
-  if (!CUR || WZ || CUR.id === 'menu') return;
+  if (!CUR || WZ || CUR.id === 'menu' || CUR.id === 'qnew') return;   // 'qnew' = חלון "חדש" (15.11) — לא נבנה מחדש באמצע הקלדה
   const f = findItem(CUR.id), sh = $('#sheet'), y = sh.scrollTop;
   if (f) { if (CUR.agId) f.agId = CUR.agId; openItem(f, SL.map((x) => findItem(x.id) || x)); if (soft) sh.scrollTop = y; }
   else if (!soft) closeSheet();
@@ -1259,11 +1272,11 @@ function openMorning() {
     <p class="lead">זה מה שקרה ומה שמחכה. אפשר לעבור על הפניות אחת-אחת: רלוונטי, לא רלוונטי, או אחר כך.</p>
     <div class="lines">${L.map(([c, n, t]) => `<div class="line" style="--c:${c}"><b>${n}</b><span>${esc(t)}</span></div>`).join('')}</div>
     <div class="acts">${b.check ? '<button class="btn dark" type="button" data-m="inbox">לעבור על הפניות</button>' : ''}${b.callNext ? '<button class="btn" type="button" data-m="calls">לעבור על השיחות</button>' : ''}<button class="btn ghost" type="button" data-m="close">לסגור</button></div>`;
-  const mw = $('#mw'); mw.hidden = false; requestAnimationFrame(() => mw.classList.add('on'));
+  const mw = $('#mw'); mw.hidden = false; requestAnimationFrame(() => mw.classList.add('on')); MWON = true; histPush();
   try { localStorage.setItem(MORNING_KEY(), '1'); } catch (e) {}
   const f = mw.querySelector('.btn'); if (f) f.focus({ preventScroll: true });
 }
-function closeMorning() { const mw = $('#mw'); mw.classList.remove('on'); setTimeout(() => { if (!mw.classList.contains('on')) mw.hidden = true; }, 350); }
+function closeMorning() { const mw = $('#mw'); mw.classList.remove('on'); MWON = false; if (!CUR) histPop(); setTimeout(() => { if (!mw.classList.contains('on')) mw.hidden = true; }, 350); }
 $('#mw').addEventListener('click', (e) => {
   if (e.target === $('#mw')) return closeMorning();
   const b = e.target.closest('[data-m]'); if (!b) return; closeMorning();
@@ -1314,6 +1327,7 @@ function renderAll(bumpIt) {
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   scanPaint();
+  if (QS) renderSearch();   // חיפוש פתוח — התוצאות מתעדכנות עם הנתונים החדשים
 }
 
 // סכומים בטקסט חופשי → [סכום] (רק לתצוגת צוות). ביקורות לוח 4–5: מילת-מפתח עצמאית; סכום = 3+ ספרות (או אלפים עם פסיק);
@@ -1400,7 +1414,7 @@ async function boot() {
   try { ok = await load(); } catch (e) { console.warn(e); $('#hero').hidden = false; $('#brief').textContent = 'לא הצלחתי לטעון מהענן. בדוק רשת ורענן.'; return; }
   if (!ok) { $('#gate').hidden = false; $('#app').classList.remove('boot'); return; }
   SINCE = sinceTime(); BOOTED = true; st0.then((x) => { STAMP = x; });
-  $('#hero').hidden = false; $('#grid').hidden = false; renderAll();
+  $('#hero').hidden = false; $('#grid').hidden = false; $('#qbar').hidden = false; renderAll();
   requestAnimationFrame(() => $$('.seg').forEach(pill)); document.fonts && document.fonts.ready.then(() => $$('.seg').forEach(pill));
   setTimeout(unboot, 1800);
   try { localStorage.setItem(SEEN_KEY(), String(Date.now())); } catch (e) {}
@@ -1521,4 +1535,198 @@ const netState = () => { $('#offline').hidden = navigator.onLine !== false; };
 addEventListener('offline', netState);
 addEventListener('online', () => { netState(); if (FX) return; if (!BOOTED && $('#gate').hidden) location.reload(); else refreshNow(0); });
 netState();
+
+/* ---------- חיפוש כללי + "חדש" (15.11, אור: "חיפוש בכל האפליקציה מהמסך הראשי... ולפתוח לו כרטיס ולהוציא הצעה") ----------
+   שורה אחת למעלה מחפשת בלקוחות, פניות, שיחות, עבודות, הצעות ובסל. ליד כל תוצאה — הפעולות שלה.
+   בסוף תמיד "לקוח חדש בשם ___". הצעות מחיר ומה שבסל — רק לבעלים (לצוות אין כסף). שום דבר לא נמחק: "להחזיר" מנקה deleted_at. */
+let QS = '', QT = null, QMORE = {};
+const XQ = { done: false, busy: false, trash: [], quotes: [] };   // נטען פעם אחת, כשמתחילים לחפש
+async function qExtra() {
+  if (XQ.done || XQ.busy || !isOwner()) return; XQ.busy = true;
+  try {
+    if (FX) { const s = FX.server || {}; XQ.trash = (s.customers || []).filter((c) => c.deleted_at); XQ.quotes = (s.quotes || FX.quotes || []).filter((q) => !q.deleted_at); }
+    else {
+      const [t, q] = await Promise.all([sb.from('customers').select('id,name,address,phone,email,notes,deleted_at').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }).limit(3000),
+        sb.from('quotes').select('id,job_id,number,status,created_at').is('deleted_at', null).order('created_at', { ascending: false }).limit(5000)]);
+      if (!t.error) XQ.trash = t.data || []; if (!q.error) XQ.quotes = q.data || [];
+    }
+    XQ.done = true;
+  } catch (e) { console.warn(e); } finally { XQ.busy = false; }
+  if (QS) renderSearch();
+}
+const QK = { cust: ['לקוחות', 'לקוח', 'var(--lav)'], wa: ['פניות מוואטסאפ', 'וואטסאפ', 'var(--wa)'], call: ['שיחות טלפון', 'שיחה', 'var(--zo)'], job: ['עבודות', 'עבודה', 'var(--accent)'], quote: ['הצעות מחיר', 'הצעה', '#6f9f3a'], trash: ['בסל המיחזור', 'בסל', 'var(--muted)'] };
+const STAGE_HE = { lead: 'לתאם ביקור', visit: 'ביקור', quote: 'להכין הצעה', sent: 'הצעה נשלחה', approved: 'אושר', doing: 'בביצוע', paid: 'שולם', lost: 'לא יצא' };
+function qHit(q, texts, phones) {
+  const ql = q.toLowerCase(), qd = q.replace(/\D/g, '');
+  if (texts.some((t) => t && String(t).toLowerCase().includes(ql))) return true;
+  return qd.length >= 3 && phones.some((p) => p && (normPhone(p).includes(qd) || String(p).replace(/\D/g, '').includes(qd)));
+}
+function qMark(s, q) {
+  s = String(s || ''); const i = s.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 || !q ? esc(s) : esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length));
+}
+const liveJobOf = (cid) => custItems().find((x) => x.src === 'job' && x.job.customer_id === cid);
+function qResults(q) {
+  const own = isOwner(), out = [];
+  const B = (a, label, main) => `<button class="btn${main ? ' pri' : ''}" type="button" data-qa="${a}">${label}</button>`;
+  D.customers.forEach((c) => {
+    if (!qHit(q, [c.name, c.address, c.email, c.notes], [c.phone])) return;
+    const n = D.jobs.filter((j) => j.customer_id === c.id).length;
+    out.push({ k: 'cust', id: c.id, name: c.name || fmtPhone(c.phone) || 'לקוח', sub: [c.address, fmtPhone(c.phone)].filter(Boolean).join(' · '), extra: n ? n + (n === 1 ? ' עבודה' : ' עבודות') : 'עוד אין עבודות',
+      acts: (own ? B('quote', 'הצעה חדשה', true) : '') + B('job', 'עבודה חדשה', !own) + (liveJobOf(c.id) ? B('open', 'לפתוח') : '') });
+  });
+  D.leads.forEach((l) => {
+    const msgs = ((l.data && l.data.messages) || []).map((m) => m && m.text);
+    if (!qHit(q, [leadName(l), l.summary, l.data && l.data.area, l.data && l.data.address, ...msgs], [leadPhone(l)])) return;
+    const linked = l.customer_id && custOf(l.customer_id), live = findItem('W' + l.jid);
+    out.push({ k: 'wa', id: l.jid, name: leadName(l), sub: [fmtPhone(leadPhone(l)), l.last_activity ? 'כתב ' + ago(T(l.last_activity)) : ''].filter(Boolean).join(' · '), extra: short(l.summary || '', 160),
+      acts: linked ? (own ? B('quote', 'הצעה חדשה ל' + short(linked.name, 18), true) : '') + (liveJobOf(linked.id) ? B('open', 'לפתוח את הכרטיס') : '')
+        : (own ? B('lquote', 'לפתוח כרטיס והצעה', true) : '') + (live ? B('open', 'לפתוח את הפנייה') : '') });
+  });
+  D.calls.forEach((k) => {
+    const d = k.data || {};
+    if (!qHit(q, [callWho(k), k.contact, d.place, d.topic, d.summary], [k.phone])) return;
+    const linked = k.customer_id && custOf(k.customer_id);
+    out.push({ k: 'call', id: k.id, name: callWho(k), sub: [fmtPhone(k.phone), dmT(callTime(k))].filter(Boolean).join(' · '), extra: short(d.topic || d.summary || '', 160),
+      acts: (linked ? (own ? B('quote', 'הצעה חדשה ל' + short(linked.name, 18), true) : '') : (own ? B('lquote', 'לפתוח כרטיס והצעה', true) : '')) + B('open', 'לשמוע / לקרוא') });
+  });
+  D.jobs.forEach((j) => {
+    const c = custOf(j.customer_id);
+    if (!qHit(q, [j.title, j.problem, c && c.name, c && c.address], [c && c.phone])) return;
+    const live = custItems().find((x) => x.id === 'J' + j.id);
+    out.push({ k: 'job', id: j.id, name: (j.title || 'עבודה') + (c ? ' · ' + c.name : ''), sub: 'שלב: ' + (STAGE_HE[j.stage] || j.stage || '') + (j.created_at ? ' · נפתחה ' + dmT(T(j.created_at)) : ''), extra: j.problem && j.problem !== j.title ? short(j.problem, 160) : '',
+      acts: (live ? B('open', 'לפתוח', !own) : '') + (own ? B('jquote', 'הצעות מחיר', true) : '') });
+  });
+  if (own) XQ.quotes.forEach((x) => {
+    const j = D.jobs.find((y) => y.id === x.job_id), c = j && custOf(j.customer_id);
+    if (!j || !qHit(q, [String(x.number || ''), c && c.name], [])) return;
+    out.push({ k: 'quote', id: x.id, name: 'הצעה ' + (x.number || 'טיוטה') + (c ? ' · ' + c.name : ''), sub: ({ draft: 'טיוטה', sent: 'נשלחה', approved: 'אושרה' })[x.status] || x.status || '', extra: x.created_at ? 'מ-' + dmT(T(x.created_at)) : '', job: j.id,
+      acts: B('qopen', 'לפתוח את ההצעה', true) });
+  });
+  if (own) XQ.trash.forEach((c) => {
+    if (D.customers.some((x) => x.id === c.id) || !qHit(q, [c.name, c.address, c.email, c.notes], [c.phone])) return;
+    out.push({ k: 'trash', id: c.id, name: c.name || fmtPhone(c.phone) || 'לקוח', sub: [c.address, fmtPhone(c.phone)].filter(Boolean).join(' · '), extra: 'הועבר לסל ' + dmT(T(c.deleted_at)), acts: B('restore', 'להחזיר') });
+  });
+  return out;
+}
+function renderSearch() {
+  const box = $('#qres'), q = QS.trim();
+  document.body.classList.toggle('searching', !!q); box.hidden = !q;
+  if (!q) { box.innerHTML = ''; return; }
+  const all = qResults(q), order = ['cust', 'wa', 'call', 'job', 'quote', 'trash'];
+  let html = '';
+  order.forEach((k) => {
+    const g = all.filter((x) => x.k === k); if (!g.length) return;
+    const cut = QMORE[k] ? g : g.slice(0, 12);
+    html += `<div class="grp">${QK[k][0]} · ${g.length}</div>` + cut.map((x) => `<div class="qr${k === 'trash' ? ' dim' : ''}" data-qk="${k}" data-qid="${esc(x.id)}"${x.job ? ` data-qjob="${esc(x.job)}"` : ''}><div class="rh"><span class="rn">${qMark(x.name, q)}</span><span class="tag" style="--tc:${QK[k][2]}">${QK[k][1]}</span></div>${x.sub ? `<div class="rs">${qMark(x.sub, q)}</div>` : ''}${x.extra ? `<div class="rs">${qMark(x.extra, q)}</div>` : ''}${x.acts ? `<div class="acts">${x.acts}</div>` : ''}</div>`).join('')
+      + (g.length > cut.length ? `<button class="btn qmore" type="button" data-qmore="${k}">עוד ${g.length - cut.length}</button>` : '');
+  });
+  if (!all.length) html += `<div class="qr"><span class="rs">${XQ.busy ? 'מחפש גם בסל ובהצעות…' : 'לא נמצא כלום בשם הזה.'}</span></div>`;
+  html += `<div class="qr mk"><div class="rh"><span class="rn">לקוח חדש בשם "${esc(q)}"</span></div><div class="rs">פותח כרטיס לקוח${isOwner() ? ' ומיד את כלי ההצעות' : ''}. טלפון וכתובת אפשר להוסיף אחר כך.</div><div class="acts">${isOwner() ? '<button class="btn pri" type="button" data-qa="mkq">ליצור לקוח והצעה</button>' : ''}<button class="btn${isOwner() ? '' : ' pri'}" type="button" data-qa="mkj">ליצור לקוח ועבודה</button></div></div>`;
+  box.innerHTML = html;
+}
+function setSearch(v) { QS = v; QMORE = {}; if ($('#gq').value !== v) $('#gq').value = v; renderSearch(); if (v.trim()) qExtra(); }
+$('#gq').addEventListener('input', (e) => { clearTimeout(QT); const v = e.target.value; QT = setTimeout(() => { QS = v; QMORE = {}; renderSearch(); if (v.trim()) qExtra(); }, FX ? 0 : 120); });
+$('#gq').addEventListener('keydown', (e) => { if (e.key === 'Escape') { setSearch(''); e.target.blur(); } });
+const goOffer = (jobId, extra) => { const u = 'offer.html?job=' + encodeURIComponent(jobId) + (extra || ''); if (FX) FX.nav = u; else location.href = u; };
+// עבודה חדשה ללקוח קיים. kind='quote' → שלב "להכין הצעה" ומיד כלי ההצעות; אחרת → "לתאם ביקור" ונפתח הכרטיס
+async function newWork(cid, kind) {
+  const now = new Date().toISOString(), j = { id: uuid(), customer_id: cid, title: null, stage: kind === 'quote' ? 'quote' : 'lead', stage_changed_at: now, problem: null, created_at: now, updated_at: now };
+  if (!(await dbInsert('jobs', j))) return false;
+  if (!D.jobs.some((x) => x.id === j.id)) D.jobs.push(j); dirty();
+  if (kind === 'quote') { goOffer(j.id, '&new=1'); return true; }
+  setSearch(''); renderAll(); const it = findItem('J' + j.id); if (it) openItem(it, [it]); toast('נפתחה עבודה חדשה'); return true;
+}
+// פנייה/שיחה בלי לקוח → כרטיס (אותו מסלול של האשף, כולל "אותו טלפון = אותו לקוח") → הצעה
+async function leadToQuote(k, id) {
+  let it, w;
+  if (k === 'wa') { const l = D.leads.find((x) => x.jid === id); if (!l) return; it = findItem('W' + id) || { id: 'W' + id, src: 'wa', jid: id, lead: l, calls: callsOf(id, leadPhone(l)) }; const n = leadName(l); w = { it, name: looksPhone(n) || n === 'ללא שם' ? '' : n, phone: leadPhone(l), problem: l.summary || '', place: (l.data && (l.data.address || l.data.area)) || '' }; }
+  else { it = findItem('K' + id); if (!it) return; const c = it.call, n = callWho(c); w = { it, name: looksPhone(n) || n === 'מספר לא ידוע' ? '' : n, phone: c.phone, problem: (c.data && (c.data.topic || c.data.summary)) || '', place: (c.data && c.data.place) || '' }; }
+  let r = await openCard(w);
+  if (r === 'ask') { w.useCust = w.askCust; r = await openCard(w); }   // אותו טלפון כבר שייך ללקוח — ממשיכים אצלו, לא יוצרים כפול
+  if (!w.jobId) return;
+  const j = D.jobs.find((x) => x.id === w.jobId);
+  if (j && j.stage === 'lead') { const p = { stage: 'quote', stage_changed_at: new Date().toISOString() }; if (await dbUpdate('jobs', j.id, p)) Object.assign(j, p); }
+  goOffer(w.jobId, '&new=1');
+}
+async function restoreCust(id) {
+  const c = XQ.trash.find((x) => x.id === id); if (!c) return;
+  if (!(await dbUpdate('customers', id, { deleted_at: null }))) return;
+  let jobs = [];   // העבודות שעברו לסל יחד איתו (כמו "שחזר" באפליקציה)
+  if (FX) jobs = (FX.server.jobs || []).filter((j) => j.customer_id === id && j.deleted_at);
+  else { const r = await sb.from('jobs').select('id,customer_id,title,stage,stage_changed_at,visit_at,quote_sent_at,problem,created_at,updated_at,price_agreed,deleted_at').eq('customer_id', id).not('deleted_at', 'is', null); jobs = r.data || []; }
+  for (const j of jobs) if (await dbUpdate('jobs', j.id, { deleted_at: null })) { const jj = { ...j, deleted_at: null }; if (!D.jobs.some((x) => x.id === j.id)) D.jobs.push(jj); }
+  XQ.trash = XQ.trash.filter((x) => x.id !== id); const { deleted_at, ...cc } = c; if (!D.customers.some((x) => x.id === id)) D.customers.push(cc);
+  dirty(); renderAll(); renderSearch(); toast((c.name || 'הלקוח') + ' חזר מהסל' + (jobs.length ? ' עם ' + jobs.length + (jobs.length === 1 ? ' עבודה' : ' עבודות') : ''));
+}
+let QBUSY = false;
+$('#qres').addEventListener('click', async (e) => {
+  const m = e.target.closest('[data-qmore]'); if (m) { QMORE[m.dataset.qmore] = true; renderSearch(); return; }
+  const b = e.target.closest('[data-qa]'); if (!b || QBUSY) return;
+  const row = b.closest('[data-qk]'), k = row && row.dataset.qk, id = row && row.dataset.qid, a = b.dataset.qa;
+  if (a === 'mkq' || a === 'mkj') return openNew(a === 'mkq' ? 'quote' : 'job', QS.trim());
+  QBUSY = true; b.disabled = true;
+  try {
+    const cidOf = () => k === 'cust' ? id : k === 'wa' ? (D.leads.find((x) => x.jid === id) || {}).customer_id : k === 'call' ? (D.calls.find((x) => x.id === id) || {}).customer_id : null;
+    if (a === 'quote') { const cid = cidOf(); if (cid) await newWork(cid, 'quote'); }
+    else if (a === 'job') await newWork(id, 'job');
+    else if (a === 'lquote') await leadToQuote(k, id);
+    else if (a === 'jquote') goOffer(id);
+    else if (a === 'qopen') goOffer(row.dataset.qjob, '&q=' + encodeURIComponent(id));
+    else if (a === 'restore') await restoreCust(id);
+    else if (a === 'open') {
+      const it = k === 'call' ? findItem('K' + id) : k === 'job' ? findItem('J' + id) : k === 'wa' && !cidOf() ? findItem('W' + id) : liveJobOf(cidOf());
+      if (it) openItem(it, [it]); else toast('אין כרטיס פתוח. אפשר ליצור עבודה או הצעה חדשה');
+    }
+  } finally { QBUSY = false; if (b.isConnected) b.disabled = false; }
+});
+// "חדש": מה ליצור → למי (לקוח קיים או חדש) → יוצרים. בלי אשף, בלי שדות חובה מלבד שם.
+function openNew(kind, name) {
+  CUR = { id: 'qnew' }; WZ = null; SL = [];
+  const sh = $('#sheet'); sh.style.setProperty('--pc', 'var(--lav)');
+  if (!kind) {
+    sh.innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2>מה ליצור?</h2><div class="qnewf">
+      ${isOwner() ? '<button class="opt" type="button" data-qn="quote"><b>הצעת מחיר</b><span>ללקוח קיים או חדש</span></button>' : ''}
+      <button class="opt" type="button" data-qn="job"><b>עבודה / ביקור</b><span>פותח כרטיס בלקוחות, לתאם ביקור</span></button>
+      <button class="opt" type="button" data-qn="cust"><b>לקוח חדש</b><span>רק כרטיס לקוח, בלי עבודה</span></button></div>`;
+    showSheet(); return;
+  }
+  const title = kind === 'quote' ? 'הצעת מחיר חדשה' : kind === 'job' ? 'עבודה חדשה' : 'לקוח חדש';
+  sh.innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2>${title}</h2>
+    <div class="qnewf cedit" data-kind="${kind}"><label>שם הלקוח (מחפש גם בקיימים)<input id="qn-name" autocomplete="off" value="${esc(name || '')}"></label><div id="qn-match" class="qnewf"></div>
+    <label>טלפון (לא חובה)<input id="qn-phone" inputmode="tel" autocomplete="off"></label>
+    <button class="btn pri" type="button" data-qn="go" style="min-height:46px">${kind === 'quote' ? 'להמשיך להצעה' : kind === 'job' ? 'לפתוח עבודה' : 'לשמור לקוח'}</button></div>`;
+  showSheet(); qnMatch(); setTimeout(() => { const i = $('#qn-name'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 60);
+}
+function qnMatch() {
+  const n = ($('#qn-name') || {}).value || '', p = ($('#qn-phone') || {}).value || '', box = $('#qn-match'); if (!box) return;
+  const nn = n.trim(), pd = normPhone(p);
+  const ex = !nn && pd.length < 7 ? [] : D.customers.filter((c) => (nn.length >= 2 && (c.name || '').includes(nn)) || (pd.length >= 7 && normPhone(c.phone) === pd)).slice(0, 6);
+  box.innerHTML = ex.length ? '<p class="hint2">כבר קיימים — אפשר לבחור במקום ליצור כפול:</p>' + ex.map((c) => `<button class="opt" type="button" data-qn="pick" data-cid="${esc(c.id)}"><b>${esc(c.name || '')}</b><span>${esc([c.address, fmtPhone(c.phone)].filter(Boolean).join(' · ') || 'בלי פרטים')}</span></button>`).join('') : nn ? '<p class="hint2">אין לקוח בשם הזה. ייפתח כרטיס חדש.</p>' : '';
+}
+$('#sheet').addEventListener('input', (e) => { if (e.target.id === 'qn-name' || e.target.id === 'qn-phone') qnMatch(); });
+$('#sheet').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-qn]'); if (!b || !CUR || CUR.id !== 'qnew' || QBUSY) return;
+  const v = b.dataset.qn;
+  if (['quote', 'job', 'cust'].includes(v)) return openNew(v, '');
+  const f = $('#sheet [data-kind]'), kind = f && f.dataset.kind; if (!kind) return;
+  QBUSY = true; b.disabled = true;
+  try {
+    let cid = v === 'pick' ? b.dataset.cid : null;
+    if (!cid) {
+      const name = $('#qn-name').value.trim(), phone = $('#qn-phone').value.trim();
+      if (!name) { toast('צריך שם'); return; }
+      const same = phone && custByPhone(phone);
+      if (same) { cid = same.id; toast('הטלפון הזה כבר של ' + same.name + ' — ממשיכים אצלו'); }
+      else {
+        const now = new Date().toISOString(), c = { id: uuid(), name, phone: phone || null, address: null, source: 'לוח', created_at: now, updated_at: now };
+        if (!(await dbInsert('customers', c))) return;
+        if (!D.customers.some((x) => x.id === c.id)) D.customers.push(c); dirty(); cid = c.id;
+      }
+    }
+    if (kind === 'cust') { closeSheet(); const c = custOf(cid); setSearch((c && c.name) || ''); toast('כרטיס הלקוח נשמר'); return; }
+    closeSheet(); await newWork(cid, kind === 'quote' ? 'quote' : 'job');
+  } finally { QBUSY = false; if (b.isConnected) b.disabled = false; }
+});
+$('#qnew').addEventListener('click', () => openNew(null));
 boot();

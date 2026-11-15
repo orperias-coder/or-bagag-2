@@ -10,9 +10,12 @@ const Q = {
     return { sum, disc, before, vat, total: before + vat, advance: (before + vat) * 0.3 };
   },
   tpl() { return (D.settings && D.settings.quote_template) || {}; },
+  // הפונקציה בענן (sql/001) סופרת לפי המשתמש המחובר: אצל זהרי הייתה פותחת מונה משלה (001…) → מספרים כפולים.
+  // לכן רק בעל העסק מושך מספר (כמו בכלי ההצעות בלוח); הצעה של חבר-צוות מקבלת מספר כשאור שולח אותה.
+  mayNumber() { return navigator.onLine && !(D.settings && D.settings.user_id && D.uid && D.settings.user_id !== D.uid); },
   async create(job, extra = {}) {
     const t = Q.tpl(); let number = null;
-    try { if (navigator.onLine) { const { data } = await sb.rpc('next_quote_number'); number = data || null; } } catch (e) {}
+    try { if (Q.mayNumber()) { const { data } = await sb.rpc('next_quote_number'); number = data || null; } } catch (e) {}
     const items = findingsOf(job.id).map((f) => ({ id: DB.uuid(), title: f.title, description: f.description || '', qty: Number(f.qty) || 1, unit: f.unit || '', price_per_unit: Number(f.price_per_unit) || 0, total: Math.round((Number(f.qty) || 1) * (Number(f.price_per_unit) || 0)), urgency: '', visible: true, finding_id: f.id }));
     const row = await DB.save('quotes', { job_id: job.id, number, status: 'draft', version: 1, items: extra.addon ? [] : items, addon: !!extra.addon, discount: null,
       vat_rate: Number(t.vatRate ?? 18), validity_days: Number(t.validityDays || 30),
@@ -23,6 +26,8 @@ const Q = {
   },
   cur(id) { return live(D.quotes).find((x) => x.id === id); },
   async save(q, patch, opts = {}) {
+    if (['items', 'status', 'discount'].some((k) => k in patch) && !(await DB.guard('quotes', q.id, ['items', 'status', 'version', 'discount']))) {   // 14.11: לא דורסים הצעה שנערכה בלוח
+      toast('ההצעה שונתה בינתיים במכשיר אחר — רעננתי, השינוי לא נשמר. בדוק ונסה שוב', 4500); return Q.cur(q.id) || q; }
     const cur = Q.cur(q.id) || q; let version = cur.version || 1;
     if (cur.status !== 'draft' && !opts.noVersion) {        // אחרי "נשלחה": הישנה נשמרת, גרסה עולה
       await DB.save('quote_versions', { quote_id: cur.id, version, snapshot: { ...cur } });
@@ -32,7 +37,7 @@ const Q = {
     return DB.save('quotes', { ...patch, id: cur.id, version, total_before_vat: Math.round(k.before * 100) / 100, total: Math.round(k.total * 100) / 100 });
   },
   async ensureNumber(q) {
-    if (q.number || !navigator.onLine) return q;
+    if (q.number || !Q.mayNumber()) return q;
     try { const { data } = await sb.rpc('next_quote_number'); if (data) return Q.save(q, { number: data }, { noVersion: true }); } catch (e) {}
     return q;
   },
@@ -113,7 +118,7 @@ async function quoteAction(act, t) {
   else if (act === 'discount') openDiscount(q);
   else if (act === 'mark-sent') { if (!(q.items || []).length) return toast('אין סעיפים בהצעה'); await Q.markSent(q); render(); toast('סומן: נשלחה. סופרים ימים.'); }
   else if (act === 'versions') renderVersions(q);
-  else if (act === 'accept-addon') { if (q.status === 'accepted' || t.disabled) return; t.disabled = true; if (!(q.items || []).length) { t.disabled = false; return toast('אין סעיפים בתוספת'); } const k = Q.calc(q); await Q.save(q, { status: 'accepted' }, { noVersion: true }); const j = D.jobs.find((x) => x.id === q.job_id); if (j) { await DB.save('jobs', { id: j.id, price_agreed: Number(j.price_agreed || 0) + k.total }); await tasksFromQuote(j, q); } render(); toast('התוספת נוספה לסכום העבודה'); }
+  else if (act === 'accept-addon') { if (q.status === 'accepted' || t.disabled) return; t.disabled = true; if (!(q.items || []).length) { t.disabled = false; return toast('אין סעיפים בתוספת'); } if (!(await DB.guard('jobs', q.job_id, ['price_agreed', 'stage']))) { t.disabled = false; render(); return toast('העבודה שונתה בינתיים במכשיר אחר — רעננתי. בדוק ונסה שוב', 4500); } const k = Q.calc(q); const qa = await Q.save(q, { status: 'accepted' }, { noVersion: true }); if (!qa || qa.status !== 'accepted') { t.disabled = false; render(); return; } const j = D.jobs.find((x) => x.id === q.job_id); if (j) { await DB.save('jobs', { id: j.id, price_agreed: Number(j.price_agreed || 0) + k.total }); await tasksFromQuote(j, q); } render(); toast('התוספת נוספה לסכום העבודה'); }
   else if (act === 'share') { const text = Q.shareText(q); if (navigator.share) { try { await navigator.share({ text }); } catch (e) {} } else { await navigator.clipboard.writeText(text); toast('הטקסט הועתק'); } }
   else if (act === 'pdf') show('print', { id: q.id });
   else if (act === 'trash-quote') confirmAsk('להעביר את ההצעה לסל?', 'אפשר לשחזר מ"עוד".', async () => { await DB.trash('quotes', q.id); back(); });

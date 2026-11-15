@@ -694,7 +694,8 @@ document.addEventListener('click', async (e) => {
   else if (t.dataset.act === 'new-job' && cur) openJobForm(cur.id);
   else if (t.dataset.act === 'trash-customer' && cur) confirmAsk('להעביר לסל?', 'הלקוח והעבודות שלו יועברו לסל המיחזור. אפשר לשחזר מ"עוד".', async () => { for (const j of jobsOf(cur.id)) await DB.trash('jobs', j.id); await DB.trash('customers', cur.id); S.stack = []; show('customers'); toast('הועבר לסל'); });
   else if (t.dataset.stage && job) { const s = t.dataset.stage; if (s === 'sent' && !quotesOf(job.id).length) return toast('קודם בונים הצעה');
-    if (s === 'approved') { const q = quotesOf(job.id).find((x) => x.status === 'sent') || quotesOf(job.id)[0]; if (q) { await Q.save(q, { status: 'accepted' }, { noVersion: true }); await DB.save('jobs', { id: job.id, price_agreed: q.total }); await tasksFromQuote(job, q); } }
+    if (!(await DB.guard('jobs', job.id, ['stage', 'price_agreed']))) { render(); return toast('העבודה שונתה בינתיים במכשיר אחר — רעננתי. בדוק ונסה שוב', 4500); }   // 14.11: לא מחזירים אחורה שלב שסומן בלוח
+    if (s === 'approved') { const q = quotesOf(job.id).find((x) => x.status === 'sent') || quotesOf(job.id)[0]; if (q) { const qa = await Q.save(q, { status: 'accepted' }, { noVersion: true }); if (!qa || qa.status !== 'accepted') { render(); return; } await DB.save('jobs', { id: job.id, price_agreed: q.total }); await tasksFromQuote(job, q); } }
     await DB.stage(job.id, s); render(); toast(NEXT_HE[s]); }
   else if (t.dataset.act === 'add-payment' && job) openPaymentForm(job);
   else if (t.dataset.inv) { await DB.save('payments', { id: t.dataset.inv, invoice_issued: true }); render(); toast('סומן: חשבונית הוצאה'); }
@@ -759,6 +760,13 @@ async function login() {
 }
 function setNet() { const n = $('#netdot'); n.classList.toggle('off', !navigator.onLine); const pc = DB.pendingCount(); n.classList.toggle('pending', pc > 0); n.title = !navigator.onLine ? 'אין רשת' : pc ? pc + ' עדיין לא עלו' : 'מסונכרן'; }
 document.addEventListener('visibilitychange', async () => { if (!document.hidden && ['leads', 'lead'].includes(S.view) && !$('#sheet-wrap')) { await loadWaLeads(true); render(); } });
+// 14.11: אפליקציה שהייתה ברקע יותר מ-2 דקות טוענת מחדש כשחוזרים אליה — לא עובדים על עותק מהבוקר (רק כשאין חלון/שדה פתוח)
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (!hiddenAt || Date.now() - hiddenAt < 120000 || !navigator.onLine || $('#sheet-wrap') || ['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement || {}).tagName)) return;
+  hiddenAt = 0; try { await DB.loadAll(); if (!$('#sheet-wrap')) render(); } catch (e) { console.warn(e); }
+});
 setInterval(async () => { if (!document.hidden && ['leads', 'lead'].includes(S.view) && !$('#sheet-wrap') && $('#lightbox').hidden) { await loadWaLeads(true); render(); } }, 15000);   // סימונים מהמחשב מופיעים כאן בלי לרענן
 window.addEventListener('online', setNet); window.addEventListener('offline', setNet);
 

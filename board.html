@@ -418,8 +418,42 @@ details.cool>.crow{margin-top:8px}
   body.tabbed .grid>.panel.cur{display:flex}
   body.tabbed:not(.at-today) .hero,body.tabbed .tiles{display:none}
   .cta.soft{display:none}
-  .mtop{position:sticky;top:0;z-index:20;background:rgba(245,242,250,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin:-14px -16px 0;padding:10px 16px}
+  .topbar{margin:-14px -16px 0;padding:10px 16px}
+  .topbar .mtop{margin-bottom:8px}
 }
+/* ---------- חיפוש כללי + "חדש" (15.11) ---------- */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:rgba(245,242,250,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;flex-direction:column}
+@media (min-width:901px){.topbar{margin:-18px 0 -8px;padding:12px 0 8px}}
+.qbar{display:flex;gap:8px;align-items:stretch}
+.qbar[hidden]{display:none}
+.qf{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid var(--line2);border-radius:16px;padding:0 12px;transition:border-color .2s,box-shadow .2s}
+.qf:focus-within{border-color:var(--lav);box-shadow:0 0 0 4px var(--lav-soft)}
+.qf svg{width:20px;height:20px;flex:none;stroke:var(--muted);fill:none;stroke-width:2}
+.qf input{border:0;outline:0;background:transparent;width:100%;min-width:0;padding:11px 0;font-size:16px;color:var(--ink)}
+.btn.qnew{background:var(--lav);border-color:var(--lav);color:#fff;font-weight:600;border-radius:16px;padding:6px 18px;font-size:.95rem}
+@media (min-width:901px){.qf{max-width:560px}}
+body.searching #hero,body.searching #tiles,body.searching #grid,body.searching #scanLine{display:none!important}
+.qres{display:flex;flex-direction:column;gap:10px;padding-bottom:90px}
+.qres[hidden]{display:none}
+.qres .grp{font-size:.8rem;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-top:6px}
+.qr{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--puff)}
+.qr.dim{opacity:.75;border-style:dashed;box-shadow:none}
+.qr .rh{display:flex;align-items:center;gap:8px;min-width:0}
+.qr .rn{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.qr .tag{font-size:.75rem;border-radius:999px;padding:2px 9px;font-weight:500;margin-inline-start:auto;flex:none;background:color-mix(in srgb,var(--tc) 12%,#fff);color:var(--tc)}
+.qr .rs{color:var(--muted);font-size:.86rem;overflow-wrap:anywhere}
+.qr mark{background:#fff1a8;color:inherit;border-radius:3px;padding:0 1px}
+.qr .acts{display:flex;gap:6px;flex-wrap:wrap}
+.qr .acts .btn{min-height:36px;font-size:.86rem}
+.qr .acts .btn.pri,.qnewf .btn.pri{background:var(--lav);border-color:var(--lav);color:#fff}
+.qr.mk{background:var(--lav-soft);border:1.5px solid var(--lav);box-shadow:none}
+.qr.mk .rn{color:var(--lav-deep)}
+.qres .qmore{align-self:flex-start}
+@media (min-width:1100px){.qres{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.qres .grp,.qres .qmore,.qres .qr.mk{grid-column:1/-1}.qres .qmore{justify-self:start}}
+.qnewf .opt{display:flex;flex-direction:column;gap:2px;text-align:right;border:1px solid var(--line2);border-radius:16px;padding:12px 14px;background:var(--tray);cursor:pointer;font:inherit;color:inherit}
+.qnewf .opt b{font-size:1rem}.qnewf .opt span{color:var(--muted);font-size:.86rem}
+@media (hover:hover){.qnewf .opt:hover{border-color:var(--lav)}}
+.qnewf{display:flex;flex-direction:column;gap:10px}
 .gate{max-width:440px;margin:12vh auto 0;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center;grid-column:1/-1}
 </style>
 </head>
@@ -435,7 +469,12 @@ details.cool>.crow{margin-top:8px}
   </aside>
 
   <div class="wrap">
+    <div class="topbar" id="topbar">
     <div class="mtop"><a href="./" aria-label="לאפליקציה"><img class="logo" src="logo.png" alt="אור בגג"></a><span class="who" id="meName2"></span><button class="btn rfb" type="button" data-refresh aria-label="רענון וסריקה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button><a class="btn" href="home.html" data-owner hidden style="min-height:34px;padding:4px 12px">הבית</a></div>
+    <!-- 15.11 (אור): חיפוש אחד בכל העסק + "חדש" (הצעה / עבודה / לקוח) — תמיד למעלה, מכל מקום. מוקאפ שאושר: 46XK2mX2xdVKwzAP8HMcjy -->
+    <div class="qbar" id="qbar" hidden><label class="qf" for="gq"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="gq" type="search" placeholder="חיפוש: לקוח, טלפון, כתובת, שיחה" autocomplete="off" aria-label="חיפוש בכל העסק"></label><button class="btn qnew" id="qnew" type="button"><span aria-hidden="true">+</span> חדש</button></div>
+    </div>
+    <section class="qres" id="qres" hidden aria-live="polite"></section>
     <div class="scanline" id="scanLine" role="status" hidden></div>
 
     <div class="gate" id="gate" hidden><h2>צריך להתחבר</h2><p>הלוח משתמש באותה התחברות של האפליקציה. מתחברים שם פעם אחת, וחוזרים לכאן.</p><a class="btn go" href="./">להתחברות באפליקציה</a></div>
