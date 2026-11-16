@@ -1321,9 +1321,46 @@ segInit('#taskDay', (d) => { taskDay = d; unboot(); renderTasks(); });
 segInit('#calDay', (d) => { calDay = d; unboot(); renderCal(); });
 addEventListener('resize', () => $$('.seg').forEach(pill));
 
+/* ---------- 16.11 (אור): "יתריע לי בגדול" — חוסרי חשבוניות וקבלות מהבדיקה היומית במק ---------- */
+const DOC_G = [
+  { k: 'income', t: 'להוציא חשבונית ללקוח', h: 'נכנס כסף ואין עליו חשבונית או קבלה במורנינג', open: true },
+  { k: 'source', t: 'חיבור לבנק נפל', h: 'בלי החיבור הבדיקה לא רואה הכל', open: true },
+  { k: 'expense', t: 'חסרה חשבונית מספק', h: 'חיוב עסקי בלי מסמך. לבקש מהספק או להוריד מהאתר שלו' },
+  { k: 'decide', t: 'עסקי או פרטי?', h: 'ספק חדש או שסומן פעם כך ופעם כך. נעבור על זה יחד במסך החודש' }];
+function renderDocal() {
+  const box = $('#docal'); if (!box) return;
+  if (!isOwner() || !D.docOk) { box.hidden = true; return; }
+  box.hidden = false;
+  const docs = D.docs || [], at = D.docScan && D.docScan.scanned_at;
+  const age = at ? (Date.now() - T(at)) / 864e5 : null;
+  const when = at ? 'נבדק ' + new Date(at).toLocaleString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'הבדיקה עוד לא רצה';
+  const stale = age == null || age > 2 ? `<p class="dstale">הבדיקה היומית במחשב לא רצה ${age == null ? 'אף פעם' : 'כבר ' + Math.floor(age) + ' ימים'}. כנראה המחשב כבוי או שהיא נתקעה.</p>` : '';
+  if (!docs.length) { box.className = 'docal ok'; box.innerHTML = `<div class="dh"><b>חשבוניות וקבלות: הכל מסודר</b><span>${esc(when)}</span></div>${stale}`; return; }
+  const n = (k) => docs.filter((d) => d.kind === k);
+  const sum = (a) => a.reduce((s, d) => s + (+d.amount || 0), 0);
+  const head = DOC_G.filter((g) => n(g.k).length).map((g) => `${n(g.k).length} ${g.t}`).join(' · ');
+  const row = (d) => `<div class="drow" data-doc="${esc(d.id)}">
+      <div class="dt"><b>${esc(d.who || d.detail)}</b>${d.amount != null ? `<span class="damt">${shek(d.amount)}</span>` : ''}
+        <small>${d.happened ? esc(new Date(d.happened).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })) + ' · ' : ''}${d.who ? esc(d.detail) : ''}</small></div>
+      <div class="db">${d.kind === 'income' ? '<a class="btn" target="_blank" rel="noopener" href="https://app.greeninvoice.co.il/">לפתוח את מורנינג</a><button class="btn main" type="button" data-dh>הוצאתי ✓</button>'
+        : (/^https:\/\//.test(d.link || '') ? `<a class="btn main" target="_blank" rel="noopener" href="${esc(d.link)}">${esc(d.link_label || 'לחבר מחדש')}</a>` : '') + '<button class="btn" type="button" data-dh>טיפלתי ✓</button>'}</div></div>`;
+  box.className = 'docal';
+  box.innerHTML = `<div class="dh"><b>חשבוניות וקבלות: ${docs.length} דברים מחכים לך</b><span>${esc(when)}</span></div><p class="dsum">${esc(head)}</p>${stale}`
+    + DOC_G.filter((g) => n(g.k).length).map((g) => { const a = n(g.k), s = sum(a);
+      return `<details class="dg dg-${g.k}"${g.open ? ' open' : ''}><summary><b>${esc(g.t)}</b> <span class="dn">${a.length}${s ? ' · ' + shek(s) : ''}</span><small>${esc(g.h)}</small></summary>${a.map(row).join('')}</details>`; }).join('');
+}
+async function docHandled(id) {
+  const d = (D.docs || []).find((x) => x.id === id); if (!d) return;
+  const at = new Date().toISOString();
+  if (!(await dbUpdate('doc_alerts', id, { handled_at: at }))) return;
+  D.docs = D.docs.filter((x) => x.id !== id); renderDocal();
+  toast('סומן: טופל', async () => { if (await dbUpdate('doc_alerts', id, { handled_at: null })) { D.docs.push(d); renderDocal(); } });
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('#docal [data-dh]'); if (!b) return; const r = b.closest('[data-doc]'); if (r) docHandled(r.dataset.doc); });
+
 function renderAll(bumpIt) {
   dirty();   // כל ציור מחדש מתחיל מהנתונים העדכניים (כתיבות משנות את D בין ציורים)
-  renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
+  renderDocal(); renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   scanPaint();
@@ -1372,10 +1409,11 @@ async function resolveRole(session) {
 async function load(skip) {
   if (FX) {
     FX.writes = FX.writes || []; FX.events = FX.events || []; FX.loads = (FX.loads || 0) + 1;
-    if (!FX.server) FX.server = { wa_leads: FX.wa_leads || [], tasks: FX.tasks || [], jobs: FX.jobs || [], customers: FX.customers || [], payments: FX.payments || [], calls: FX.calls || [] };
+    if (!FX.server) FX.server = { wa_leads: FX.wa_leads || [], tasks: FX.tasks || [], jobs: FX.jobs || [], customers: FX.customers || [], payments: FX.payments || [], calls: FX.calls || [], doc_alerts: FX.doc_alerts || [] };
     const cp = (t) => JSON.parse(JSON.stringify(FX.server[t] || [])).filter((r) => !r.deleted_at);
     if (skip && skip()) return null;
     Object.assign(D, { leads: cp('wa_leads'), tasks: cp('tasks'), jobs: cp('jobs'), customers: cp('customers'), payments: cp('payments'), calls: cp('calls'), email: FX.email || 'or.perias@gmail.com' });
+    D.docs = cp('doc_alerts').filter((a) => !a.gone_at && !a.handled_at); D.docScan = FX.doc_scan || null; D.docOk = !!FX.doc_alerts;
   } else {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return false;
@@ -1399,6 +1437,12 @@ async function load(skip) {
     D.payOk = !p.error; if (p.error) console.warn('payments', p.error);
     if (skip && skip()) return null;
     Object.assign(D, { leads: l.data, tasks: t.data, jobs: j.data, customers: c.data, payments: p.error ? [] : p.data, calls: k.error ? [] : k.data });
+    // 16.11 (אור): חוסרי חשבוניות וקבלות מהבדיקה היומית במק (sql/021). טבלה שעוד לא קיימת → הפס פשוט לא מוצג
+    if (owner) {
+      const [da, ds] = await Promise.all([sb.from('doc_alerts').select('id,kind,happened,amount,who,detail,link,link_label,scanned_at').is('gone_at', null).is('handled_at', null).order('happened', { ascending: false, nullsFirst: true }).limit(500),
+        sb.from('doc_scan').select('scanned_at,counts').maybeSingle()]);
+      D.docOk = !da.error; D.docs = da.error ? [] : da.data; D.docScan = ds.error ? null : ds.data;
+    } else { D.docOk = false; D.docs = []; }
   }
   if (FX) await resolveRole(null);
   if (!isOwner()) { scrubMoney(); D.calls = []; }
