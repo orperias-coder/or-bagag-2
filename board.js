@@ -613,6 +613,7 @@ function itemBody(it) {
     if (isOwner() && +j.price_agreed) rows.push(['סוכם', shek(j.price_agreed) + ' · שולם ' + shek(paidOf(j.id))]);
     if (it.again) rows.push(['כתב שוב בוואטסאפ', ago(it.again)]);
     if (j.problem) extra.push(`<p class="body">${esc(short(j.problem, 400))}</p>`);
+    { const cm = custMoneyHtml(c); if (cm) extra.push(cm); }
     D.calls.filter((x) => x.customer_id && x.customer_id === j.customer_id).slice(0, 3).forEach((x) => extra.push(`<div style="border-top:1px solid var(--line);padding-top:10px"><span class="kind" style="--pc:#b0587d">שיחת טלפון</span>${callBlock(x)}</div>`));
     if (['lead', 'visit'].includes(j.stage)) acts.push('<button class="btn main" type="button" data-s="wizard">' + (j.stage === 'lead' ? 'לתאם ביקור' : j.visit_at && T(j.visit_at) < Date.now() ? 'הביקור היה: דמי ביקור וחשבונית' : 'פרטי הביקור') + '</button>');
     if (isOwner()) acts.push(`<a class="btn${['quote', 'sent'].includes(it.tab) ? ' main' : ''}" href="offer.html?job=${encodeURIComponent(j.id)}">${it.tab === 'quote' ? 'להכין הצעת מחיר' : it.tab === 'sent' ? 'לפתוח את ההצעה' : 'הצעות מחיר'}</a>`);   // offer.html — כלי ההצעות של הלוח (09.11)
@@ -1206,30 +1207,32 @@ function renderTiles() {
 $('#tiles').addEventListener('click', (e) => { const b = e.target.closest('[data-sec]'); if (b) { curSec = b.dataset.sec; jump(b.dataset.sec); renderNav(); } });
 const NAV_ICON = { 'p-today': '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>', 'p-inbox': TI.inbox, 'p-cust': '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
   'p-calls': TI.phone, 'p-tasks': TI.check, 'p-cal': TI.cal, 'p-money': '<path d="M7 3h7l4 4v14H7z"/><path d="M10 12h5M10 16h5"/>', 'p-arch': '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/>' };
-const NAVN = { 'p-today': 'היום', 'p-inbox': 'פניות', 'p-cust': 'לקוחות', 'p-calls': 'שיחות', 'p-tasks': 'משימות', 'p-cal': 'יומן', 'p-money': 'כסף', 'p-arch': 'ארכיון' };
+const NAVN = { 'p-today': 'היום', 'p-inbox': 'פניות', 'p-cust': 'לקוחות', 'p-calls': 'שיחות', 'p-tasks': 'משימות ויומן', 'p-money': 'כספים', 'p-arch': 'ארכיון' };
+// 16.11 (אור, מוקאפ 5c8MnkrPzMiRo7YBiXoHcV): כל פריט בתפריט פותח חלון משלו על כל המסך; משימות ויומן — חלון אחד
+const WIN = (sec) => (sec === 'p-cal' ? 'p-tasks' : sec);
 let curSec = 'p-today';
 function badge(id) {
   if (id === 'p-today') return AG.filter((a) => !a.done).length;
   if (id === 'p-inbox') return mineItems().length;
   if (id === 'p-calls') return D.calls.filter((c) => callOpen(c) && c.data && c.data.next && !callIsLead(c)).length;
-  if (id === 'p-money') return moneyItems().filter((m) => m.tab === 'inv').length;
+  if (id === 'p-money') return D.docOk ? (D.docs || []).filter((d) => d.kind === 'income' || d.kind === 'source').length : moneyItems().filter((m) => m.tab === 'inv').length;
   return 0;
 }
 function renderNav() {
   const ids = Object.keys(NAVN).filter((id) => !$('#' + id).hidden), bd = (id) => { const n = badge(id); return n ? `<i>${n}</i>` : ''; };
   $('#nav').innerHTML = ids.map((id) => `<button type="button" data-sec="${id}" aria-current="${id === curSec}"><svg viewBox="0 0 24 24">${NAV_ICON[id]}</svg><span>${NAVN[id]}</span>${bd(id)}</button>`).join('');
-  const dockIds = ['p-today', 'p-inbox', 'p-cust', 'p-cal'], more = !dockIds.includes(curSec), moreN = ['p-calls', 'p-money'].reduce((n, id) => n + badge(id), 0);
-  $('#dock').innerHTML = dockIds.map((id) => `<button type="button" data-sec="${id}" aria-current="${id === curSec}"><svg viewBox="0 0 24 24">${NAV_ICON[id]}</svg>${NAVN[id]}${bd(id)}</button>`).join('')
+  const dockIds = ['p-today', 'p-inbox', 'p-cust', 'p-tasks'], more = !dockIds.includes(curSec), moreN = ['p-calls', 'p-money'].reduce((n, id) => n + badge(id), 0);
+  $('#dock').innerHTML = dockIds.map((id) => `<button type="button" data-sec="${id}" aria-current="${id === curSec}"><svg viewBox="0 0 24 24">${NAV_ICON[id]}</svg>${id === 'p-tasks' ? 'יומן' : NAVN[id]}${bd(id)}</button>`).join('')
     + `<button type="button" data-more-menu aria-current="${more}"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>עוד${moreN ? `<i>${moreN}</i>` : ''}</button>`;
-  if (isPhone()) showPhoneSec(curSec);
+  showPhoneSec(curSec);
 }
 function navGo(e) {
   if (e.target.closest('[data-more-menu]')) return openMoreMenu();
-  const b = e.target.closest('[data-sec]'); if (!b) return; curSec = b.dataset.sec; renderNav(); if (curSec === 'p-today' && !isPhone()) { scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' }); return; } jump(curSec);
+  const b = e.target.closest('[data-sec]'); if (!b) return; jump(b.dataset.sec);
 }
 function openMoreMenu() {
   CUR = { id: 'menu' }; WZ = null; SL = [];
-  const ids = ['p-calls', 'p-tasks', 'p-money', 'p-arch'].filter((id) => !$('#' + id).hidden);
+  const ids = ['p-calls', 'p-money', 'p-arch'].filter((id) => !$('#' + id).hidden);
   $('#sheet').style.setProperty('--pc', 'var(--lav)');
   $('#sheet').innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2 id="shT">עוד</h2><div class="sacts">${ids.map((id) => `<button class="btn" type="button" data-go="${id}">${NAVN[id]}${badge(id) ? ' · ' + badge(id) : ''}</button>`).join('')}${isOwner() ? '<a class="btn" href="home.html">לוח הבית</a>' : ''}<button class="btn" type="button" data-go="morning">סידור הבוקר</button><a class="btn ghost" href="./">לאפליקציה</a></div>`;
   showSheet();
@@ -1241,16 +1244,14 @@ $('#cta').addEventListener('click', () => { const a = AG.find((x) => !x.done && 
 
 /* קפיצה לחלון: גלילה וטבעת צבע קטנה */
 // טלפון: מסך אחד בכל פעם (החלטה 04.11: "רשימת היום כמסך הבית, לשוניות בתחתית"). מחשב: הכל, עם גלילה.
+// 16.11: גם במחשב — חלון אחד בכל פעם (התפריט בצד והחיפוש למעלה נשארים במקום; גוללים רק בתוך החלון)
 function showPhoneSec(sec) {
-  document.body.classList.add('tabbed'); document.body.classList.toggle('at-today', sec === 'p-today');
-  $$('.grid>.panel').forEach((p) => p.classList.toggle('cur', p.id === sec));
+  sec = WIN(sec); document.body.classList.add('tabbed'); document.body.classList.toggle('at-today', sec === 'p-today');
+  $$('.grid>.panel').forEach((p) => p.classList.toggle('cur', p.id === sec || (sec === 'p-tasks' && p.id === 'p-cal')));
 }
-addEventListener('resize', () => { if (!isPhone()) document.body.classList.remove('tabbed'); else showPhoneSec(curSec); });
 function jump(sec) {
-  if (isPhone()) { curSec = sec; renderNav(); showPhoneSec(sec); scrollTo({ top: 0 }); return; }
-  const p = $('#' + sec); if (!p || p.hidden) return; unboot();
-  p.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' });
-  p.animate && !calm && p.animate([{ boxShadow: '0 0 0 0 transparent' }, { boxShadow: `0 0 0 6px ${PC[sec]}44` }, { boxShadow: '0 0 0 0 transparent' }], { duration: 1400, delay: 350 });
+  sec = WIN(sec); const p = $('#' + sec); if (!p || p.hidden) return; unboot();
+  curSec = sec; renderNav(); showPhoneSec(sec); scrollTo({ top: 0 });
 }
 
 /* ---------- סידור הבוקר: פעם ביום, בפתיחה הראשונה. מה קרה, ואז עוברים על הפניות אחת-אחת ---------- */
@@ -1358,9 +1359,71 @@ async function docHandled(id) {
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('#docal [data-dh]'); if (!b) return; const r = b.closest('[data-doc]'); if (r) docHandled(r.dataset.doc); });
 
+/* ---------- 16.11 (אור): חלון "כספים" — מהבדיקה היומית במק (accountant/fin_snapshot.py → sql/022). בעלים בלבד ---------- */
+const NAME_STOP = new Set(['משפחת', 'משפ', 'בעמ', 'בע', 'את', 'של', 'ושות']);
+function nameToks(s) {
+  return String(s || '').replace(/["'״׳]/g, '').split(/[^A-Za-zא-ת]+/).map((w) => (w.length > 3 && w[0] === 'ו' ? w.slice(1) : w))
+    .filter((w) => w.length >= 3 && !NAME_STOP.has(w));
+}
+// משלם בבנק / לקוח במורנינג → לקוח בלוח, לפי מילה משותפת בשם (שם משפחה). כמה לקוחות מתאימים באותה מידה → לא מנחשים
+function custByName(name) {
+  const a = new Set(nameToks(name)); if (!a.size) return null;
+  let top = 0, cand = [];
+  D.customers.forEach((c) => { const n = nameToks(c.name).filter((w) => a.has(w)).length; if (!n || n < top) return; if (n > top) { top = n; cand = []; } cand.push(c); });
+  if (cand.length <= 1) return cand[0] || null;
+  // אותו שם בדיוק פעמיים (לקוח כפול) — זה אותו אדם: לוקחים את זה שיש לו עבודה בלוח
+  const key = (c) => nameToks(c.name).sort().join(' ');
+  return cand.every((c) => key(c) === key(cand[0])) ? cand.find((c) => jobOfCust(c)) || cand[0] : null;
+}
+const jobOfCust = (c) => c && custItems().find((x) => x.cust && x.cust.id === c.id);
+const FIN_ST = { ok: ['ok', ''], maybe: ['ask', 'כמה חשבוניות מתאימות'], miss: ['miss', 'אין חשבונית'] };
+const FINANCY = 'https://financy.open-finance.ai/agent';
+let FINMORE = false;
+function finRow(r) {
+  const c = custByName(r.who), j = jobOfCust(c), st = FIN_ST[r.status] || FIN_ST.miss;
+  return `<div class="frow"><span class="fd">${esc(dm(r.date))}</span><span class="fw"><b>${esc(r.who)}<span class="fsrc">${esc(r.src)}</span></b>`
+    + `<small>${c ? 'לקוח: ' + esc(c.name) : 'לא נמצא לקוח בשם הזה'}${r.doc ? ' · מסמך ' + esc(r.doc) : ''}</small></span>`
+    + `<span class="fa">${shek(r.amount)}</span><span class="fchip ${st[0]}">${esc(r.status === 'ok' ? (r.doc_type || 'יש מסמך') + ' ✓' : st[1])}</span>`
+    + `${r.status !== 'ok' || j ? `<span class="fb">${r.status !== 'ok' ? '<a class="btn" target="_blank" rel="noopener" href="https://app.greeninvoice.co.il/">לפתוח את מורנינג</a>' : ''}${j ? `<button class="btn" type="button" data-fcust="${esc(j.id)}">לכרטיס הלקוח</button>` : ''}</span>` : ''}</div>`;
+}
+function renderFin() {
+  const box = $('#fin'), f = D.fin; if (!box) return;
+  if (!isOwner() || !f) { box.hidden = true; $('#finSum').textContent = ''; return; }
+  box.hidden = false;
+  const ms = f.months || [], cur = ms[ms.length - 1] || {}, up = f.upcoming || [], rec = f.recent || [], miss = (D.docs || []).length;
+  const age = f.scanned_at ? (Date.now() - T(f.scanned_at)) / 864e5 : null;
+  $('#finSum').textContent = 'מתעדכן לבד כל יום מהבנק, מביט, מהכרטיס וממורנינג' + (f.scanned_at ? ' · נבדק ' + new Date(f.scanned_at).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+  const max = Math.max(1, ...ms.map((m) => Math.max(m.in || 0, m.out || 0)));
+  const kpi = (l, v, d, warn) => `<div class="fk${warn ? ' warn' : ''}"><small>${l}</small><b>${v}</b><span>${d}</span></div>`;
+  const shown = FINMORE ? rec : rec.slice(0, 8);
+  box.innerHTML = (age != null && age > 2 ? `<p class="dstale">הנתונים מלפני ${Math.floor(age)} ימים — הבדיקה היומית במחשב לא רצה. כנראה המחשב כבוי.</p>` : '')
+    + `<div class="fks">${kpi('נכנס החודש', shek(cur.in || 0), (cur.in_n || 0) + ' תשלומים מלקוחות')}${kpi('יצא החודש (עסקי)', shek(cur.out || 0), (cur.out_n || 0) + ' חיובים')}`
+    + `${up[0] ? kpi('החיוב הבא', shek(up[0].amount), esc(short(up[0].who, 22)) + ' · ' + esc(dm(up[0].due))) : kpi('החיוב הבא', '—', 'לא נמצאו חיובים קבועים')}`
+    + `${kpi('חסרים מסמכים', miss, miss ? 'הפירוט למטה' : 'הכל מסודר', miss > 0)}</div>`
+    + `<div class="fcols"><div class="fbox"><h4>נכנס לאחרונה</h4>${shown.map(finRow).join('') || '<div class="empty">אין תשלומים.</div>'}`
+    + `${rec.length > shown.length ? `<button type="button" class="lmore" data-finmore>עוד ${rec.length - shown.length}</button>` : ''}</div>`
+    + `<div><div class="fbox"><h4>יורד בקרוב</h4><ul class="fup">${up.slice(0, 8).map((u) => `<li><span>${esc(short(u.who, 28))} · ${esc(dm(u.due))}${u.src ? ` <span class="fsrc">${esc(u.src)}</span>` : ''}</span><b>${shek(u.amount)}</b></li>`).join('') || '<li>אין חיובים קבועים בחודש הקרוב</li>'}</ul><small class="fnote">לפי חיובים שחזרו ב-3 מתוך 4 החודשים האחרונים</small></div>`
+    + `<div class="fbox"><h4>חצי שנה</h4><div class="fbars">${ms.map((m) => `<div><span><em class="i" style="height:${Math.round(100 * (m.in || 0) / max)}%" title="נכנס ${shek(m.in || 0)}"></em><em class="o" style="height:${Math.round(100 * (m.out || 0) / max)}%" title="יצא ${shek(m.out || 0)}"></em></span>${esc(String(m.ym).slice(5))}</div>`).join('')}</div>`
+    + `<div class="flg"><span><b class="i"></b>נכנס מלקוחות</span><span><b class="o"></b>יצא (עסקי)</span></div></div>`
+    + `<div class="fbox"><h4>חיבורים</h4><ul class="fup">${(f.conns || []).map((c) => `<li><span>${esc(c.src)}</span>${c.ok ? '<span class="fchip ok">מחובר</span>' : `<a class="btn" target="_blank" rel="noopener" href="${FINANCY}">לחבר מחדש</a>`}</li>`).join('')}</ul></div>`
+    + `<div class="fbox"><h4>לרואה החשבון</h4><p class="fnote">${f.acct && f.acct.last ? 'החבילה האחרונה שנבדקה: ' + esc(f.acct.last) : 'עוד לא נבדקה אף חבילה'}</p></div></div></div>`;
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#fin [data-finmore]')) { FINMORE = true; renderFin(); return; }
+  const b = e.target.closest('#fin [data-fcust]'); if (!b) return; const it = custItems().find((x) => x.id === b.dataset.fcust); if (it) openItem(it, [it]);
+});
+// כרטיס לקוח: הכסף שנכנס מהבנק והמסמכים במורנינג, לפי השם
+function custMoneyHtml(c) {
+  if (!isOwner() || !D.fin || !c) return '';
+  const pays = (D.fin.recent || []).filter((r) => custByName(r.who) === c), docs = (D.fin.docs || []).filter((d) => custByName(d.client) === c);
+  if (!pays.length && !docs.length) return '<div class="cmoney"><b>כסף ומסמכים</b><small>לא נמצאו תשלומים או מסמכים במורנינג בשם הזה (חצי השנה האחרונה).</small></div>';
+  return `<div class="cmoney"><b>כסף ומסמכים</b>${pays.map((r) => `<div class="cm"><span>${esc(dm(r.date))} · נכנס ב${esc(r.src)}</span><b>${shek(r.amount)}</b><span class="fchip ${(FIN_ST[r.status] || FIN_ST.miss)[0]}">${esc(r.status === 'ok' ? (r.doc_type || 'יש מסמך') + ' ✓' : (FIN_ST[r.status] || FIN_ST.miss)[1])}</span></div>`).join('')}`
+    + `${docs.map((d) => `<div class="cm"><span>${esc(dm(d.date))} · ${esc(d.type)} ${esc(d.num)}</span><b>${d.amount != null ? shek(d.amount) : ''}</b><span class="fchip ok">במורנינג</span></div>`).join('')}<small>מותאם לפי השם של הלקוח</small></div>`;
+}
+
 function renderAll(bumpIt) {
   dirty();   // כל ציור מחדש מתחיל מהנתונים העדכניים (כתיבות משנות את D בין ציורים)
-  renderDocal(); renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
+  renderDocal(); renderFin(); renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderTiles(); renderHero(bumpIt); renderNav();
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   scanPaint();
@@ -1414,6 +1477,7 @@ async function load(skip) {
     if (skip && skip()) return null;
     Object.assign(D, { leads: cp('wa_leads'), tasks: cp('tasks'), jobs: cp('jobs'), customers: cp('customers'), payments: cp('payments'), calls: cp('calls'), email: FX.email || 'or.perias@gmail.com' });
     D.docs = cp('doc_alerts').filter((a) => !a.gone_at && !a.handled_at); D.docScan = FX.doc_scan || null; D.docOk = !!FX.doc_alerts;
+    D.fin = FX.fin_snapshot || null;
   } else {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return false;
@@ -1442,7 +1506,10 @@ async function load(skip) {
       const [da, ds] = await Promise.all([sb.from('doc_alerts').select('id,kind,happened,amount,who,detail,link,link_label,scanned_at').is('gone_at', null).is('handled_at', null).order('happened', { ascending: false, nullsFirst: true }).limit(500),
         sb.from('doc_scan').select('scanned_at,counts').maybeSingle()]);
       D.docOk = !da.error; D.docs = da.error ? [] : da.data; D.docScan = ds.error ? null : ds.data;
-    } else { D.docOk = false; D.docs = []; }
+      // 16.11 (אור): חלון "כספים" — תמונת-כספים יומית מהמק (sql/022). אין טבלה → החלון בלי החלק הזה
+      const fs = await sb.from('fin_snapshot').select('data,scanned_at').maybeSingle();
+      D.fin = fs.error || !fs.data ? null : Object.assign({}, fs.data.data, { scanned_at: fs.data.scanned_at });
+    } else { D.docOk = false; D.docs = []; D.fin = null; }
   }
   if (FX) await resolveRole(null);
   if (!isOwner()) { scrubMoney(); D.calls = []; }

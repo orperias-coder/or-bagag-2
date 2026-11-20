@@ -185,6 +185,35 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* 16.11: פס חשבוניות וקבלות — גדול, כתום, בראש הלוח */
 .docal{background:linear-gradient(180deg,#fff1e6 0,#fff 140px);border:2px solid #e07a3a;border-radius:var(--r);padding:18px 20px;margin:0 0 18px;box-shadow:var(--puff);display:flex;flex-direction:column;gap:10px}
 .docal.ok{border-color:#9fd3b2;background:#f1faf4;padding:12px 18px}
+/* ---------- 16.11: חלון כספים ---------- */
+.fin{display:flex;flex-direction:column;gap:16px}
+.fks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.fk{border:1px solid var(--line);border-radius:18px;padding:12px 16px;background:#fff;transition:transform .45s var(--spring)}
+@media (hover:hover){.fk:hover{transform:translateY(-3px)}}
+.fk small{display:block;color:var(--muted);font-size:.82rem}.fk b{display:block;font-size:1.4rem;margin-top:2px}.fk span{font-size:.8rem;color:var(--muted)}
+.fk.warn{border-color:#e07a3a;background:#fff1e6}
+.fcols{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:16px;align-items:start}
+.fbox{border:1px solid var(--line);border-radius:18px;padding:14px 16px;background:#fff;margin-bottom:16px}
+.fbox h4{margin:0 0 8px;font-size:1rem}
+.frow{display:grid;grid-template-columns:44px minmax(0,1fr) auto auto;gap:6px 10px;align-items:center;padding:9px 0;border-top:1px solid #f1edf8}
+.frow:first-of-type{border-top:0}
+.frow .fd{color:var(--muted);font-size:.85rem}.frow .fw b{font-weight:500;display:block}.frow .fw small{color:var(--muted);font-size:.8rem}
+.frow .fa{font-weight:600;white-space:nowrap}.frow .fb{grid-column:2/-1;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.fsrc{font-size:.72rem;border:1px solid var(--line2);border-radius:6px;padding:0 6px;color:var(--muted);margin-inline-start:6px;font-weight:400}
+.fchip{font-size:.78rem;border-radius:99px;padding:3px 10px;white-space:nowrap}
+.fchip.ok{background:#e3f4ea;color:#1d7148}.fchip.miss{background:#fbe6e1;color:#b03a22}.fchip.ask{background:#fdeee3;color:#b4501c}
+.fup{list-style:none;margin:0;padding:0}.fup li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #f1edf8}.fup li:first-child{border-top:0}
+.fnote{color:var(--muted);font-size:.8rem;margin:4px 0 0}
+.fbars{display:flex;align-items:flex-end;gap:10px;height:120px}
+.fbars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:.75rem;color:var(--muted)}
+.fbars span{width:100%;height:100px;display:flex;gap:3px;align-items:flex-end}
+.fbars em{flex:1;border-radius:6px 6px 0 0;min-height:2px}.fbars em.i,.flg b.i{background:#2a9a63}.fbars em.o,.flg b.o{background:#e07a3a}
+.flg{display:flex;gap:14px;font-size:.8rem;color:var(--muted);margin-top:6px}.flg b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:4px;vertical-align:-1px}
+.fin-h{margin:6px 0 0;font-size:1rem;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.fin-h .sum{font-weight:400}
+.cmoney{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.cmoney small{color:var(--muted);font-size:.8rem}
+.cmoney .cm{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;font-size:.9rem}
+@media (max-width:900px){.fks{grid-template-columns:1fr 1fr}.fcols{grid-template-columns:minmax(0,1fr)}.frow{grid-template-columns:40px minmax(0,1fr) auto}.frow .fchip{grid-column:2/-1;justify-self:start}}
 .docal .dh{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px}
 .docal .dh b{font-size:1.35rem;color:#b4501c}.docal.ok .dh b{font-size:1rem;color:#2f7a4c}
 .docal .dh span{color:var(--muted);font-size:.82rem}
@@ -435,11 +464,13 @@ details.cool>.crow{margin-top:8px}
 .phs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .phs .ph0,.phs .ph1{display:block;width:100%;aspect-ratio:1;border-radius:12px;background:var(--tray);object-fit:cover}
 .phs .vid{display:grid;place-items:center;color:var(--lav-deep);font-size:1.3rem;text-decoration:none}
-/* טלפון: מסך אחד בכל פעם */
+/* חלון אחד בכל פעם — בטלפון (04.11) ומ-16.11 גם במחשב (אור: "מה שלוחצים בתפריט הצדדי יפתח על כל המסך את החלון") */
+body.tabbed .grid>.panel{display:none}
+body.tabbed .grid>.panel.cur{display:flex}
+body.tabbed:not(.at-today) .hero,body.tabbed:not(.at-today) .tiles{display:none}
+@media (min-width:901px){body.tabbed .grid>.panel.cur{min-height:calc(100vh - 150px)}body.tabbed.at-today .grid>.panel.cur{min-height:0}}
 @media (max-width:900px){
-  body.tabbed .grid>.panel{display:none}
-  body.tabbed .grid>.panel.cur{display:flex}
-  body.tabbed:not(.at-today) .hero,body.tabbed .tiles{display:none}
+  body.tabbed .tiles{display:none}
   .cta.soft{display:none}
   .topbar{margin:-14px -16px 0;padding:10px 16px}
   .topbar .mtop{margin-bottom:8px}
@@ -537,9 +568,6 @@ body.searching #hero,body.searching #tiles,body.searching #grid,body.searching #
       </div>
     </section>
 
-    <!-- 16.11 (אור): חוסרי חשבוניות וקבלות — מהבדיקה היומית במק (accountant/docs_alert.py → sql/021). בעלים בלבד -->
-    <section class="docal" id="docal" hidden aria-live="polite"></section>
-
     <div class="tiles" id="tiles"></div>
 
     <div class="grid" id="grid" hidden>
@@ -586,7 +614,12 @@ body.searching #hero,body.searching #tiles,body.searching #grid,body.searching #
       </section>
 
       <section class="panel span12" id="p-money" style="--i:7">
-        <div class="ph"><span class="sq"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M10 12h5M10 16h5"/></svg></span><h2>גבייה וחשבוניות</h2><span class="sum" id="moneySum"></span></div>
+        <div class="ph"><span class="sq"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M10 12h5M10 16h5"/></svg></span><h2>כספים</h2><span class="sum" id="finSum"></span></div>
+        <!-- 16.11 (אור): הכנסות, הוצאות, החיוב הבא, התשלומים האחרונים ומצב החשבונית — מהבדיקה היומית במק (sql/022) -->
+        <div class="fin" id="fin" hidden></div>
+        <!-- חוסרי חשבוניות וקבלות — מהבדיקה היומית במק (accountant/docs_alert.py → sql/021). בעלים בלבד -->
+        <section class="docal" id="docal" hidden aria-live="polite"></section>
+        <h3 class="fin-h">גבייה ותשלומים שנרשמו באפליקציה <span class="sum" id="moneySum"></span></h3>
         <div class="ltabs" id="mtabs" role="tablist" aria-label="כסף"></div>
         <div class="lrows two" id="money"></div>
       </section>
