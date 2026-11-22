@@ -1357,7 +1357,7 @@ function openMoreMenu() {
   CUR = { id: 'menu' }; WZ = null; SL = [];
   const ids = ['p-calls', 'p-money', 'p-geo', 'p-arch'].filter((id) => !$('#' + id).hidden);
   $('#sheet').style.setProperty('--pc', 'var(--lav)');
-  $('#sheet').innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2 id="shT">עוד</h2><div class="sacts">${ids.map((id) => `<button class="btn" type="button" data-go="${id}">${NAVN[id]}${badge(id) ? ' · ' + badge(id) : ''}</button>`).join('')}<button class="btn" type="button" data-go="moves">מה זז היום</button>${isOwner() ? '<a class="btn" href="home.html">לוח הבית</a>' : ''}<button class="btn" type="button" data-go="morning">סידור הבוקר</button><a class="btn ghost" href="./">לאפליקציה</a></div>`;
+  $('#sheet').innerHTML = `<div class="grab"></div><button class="x" type="button" data-s="close" aria-label="סגירה">×</button><h2 id="shT">עוד</h2><div class="sacts">${ids.map((id) => `<button class="btn" type="button" data-go="${id}">${NAVN[id]}${badge(id) ? ' · ' + badge(id) : ''}</button>`).join('')}<button class="btn" type="button" data-go="moves">מה זז היום</button><button class="btn" type="button" data-car>מצב רכב</button>${INSTALL ? '<button class="btn" type="button" data-install>להתקין את הלוח בטלפון</button>' : ''}${isOwner() ? '<a class="btn" href="home.html">לוח הבית</a>' : ''}<button class="btn" type="button" data-go="morning">סידור הבוקר</button><a class="btn ghost" href="./">לאפליקציה</a></div>`;
   showSheet();
 }
 $('#sheet').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (!g) return; if (g.dataset.go === 'moves') return openMoves(); closeSheet(); if (g.dataset.go === 'morning') return openMorning(); curSec = g.dataset.go; renderNav(); jump(curSec); });
@@ -1587,7 +1587,7 @@ function custMoneyHtml(c) {
 
 function renderAll(bumpIt) {
   dirty();   // כל ציור מחדש מתחיל מהנתונים העדכניים (כתיבות משנות את D בין ציורים)
-  renderDocal(); renderFin(); renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderGeo(); renderTiles(); renderHero(bumpIt); renderNav();
+  renderDocal(); renderFin(); renderAgenda(); renderInbox(); renderCust(); renderCalls(); renderTasks(); renderCal(); renderMoney(); renderArch(); renderGeo(); renderTiles(); renderHero(bumpIt); renderNav(); carPaint();
   const sc = D.leads.reduce((m, l) => (l.scanned_at > m ? l.scanned_at : m), '');
   $('#status').textContent = sc ? 'וואטסאפ נסרק: ' + new Date(sc).toLocaleString('he-IL', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   scanPaint();
@@ -2246,6 +2246,75 @@ $('#sheet').addEventListener('click', (e) => {
   if (b.dataset.inv === 'bank' && PAYCTX) return invFromBank(PAYCTX.r, PAYCTX.d);
   if (b.dataset.inv === 'pay' && CUR && CUR.pay) return invFromPay(CUR);
 });
+/* ====================== 22.11 (אור): מצב רכב — אחד קבוע למעלה + רשימה, צבע קבוע לכל לקוח ====================== */
+// מי שדיברנו איתו ב-3 ימי העבודה האחרונים (שיחה או וואטסאפ), גם בלי שום דבר ביומן. כפתורים גדולים: ניווט, וואטסאפ, חיוג.
+const CAR_DAYS = 3, CAR_KEY = 'ob2car', CAR_COL_KEY = 'ob2carcol', CAR_COL = ['#e5484d', '#3f9b3a', '#f08c00', '#1a9aa8', '#e0569b', '#d4a400'];
+const CAR = { on: false, f: null, head: null };
+const carKey = (x) => normPhone(x.phone) || x.id;
+function carPeople() { return geoPeople().filter((x) => !x.nope && x.at && bizAge(x.at) <= CAR_DAYS * 864e5).sort((a, b) => b.at - a.at); }
+// הצבע נשמר בטלפון לפי מספר, כדי ש"האדום" יישאר אדום גם מחר; לקוח חדש מקבל צבע ששונה משני השכנים שלו ברשימה
+function carColors(L) {
+  let m = {}; try { m = JSON.parse(localStorage.getItem(CAR_COL_KEY) || '{}') || {}; } catch (e) {}
+  let ch = false;
+  L.forEach((x, i) => {
+    const k = carKey(x); if (m[k] != null) return;
+    const prev = i ? m[carKey(L[i - 1])] : -1, next = L[i + 1] ? m[carKey(L[i + 1])] : -1; let best = -1, bn = 0;
+    CAR_COL.forEach((_, c) => { if (c === prev || c === next) return; const n = L.filter((y) => m[carKey(y)] === c).length; if (best < 0 || n < bn) { best = c; bn = n; } });
+    m[k] = best; ch = true;
+  });
+  if (ch) { try { localStorage.setItem(CAR_COL_KEY, JSON.stringify(Object.fromEntries(Object.entries(m).slice(-400)))); } catch (e) {} }
+  return m;
+}
+// יעד הניווט: כתובת מלאה אם יש; אחרת היישוב עצמו (ואז כתוב בבירור שאין כתובת)
+function carDest(x) {
+  const city = x.city || '', hasAdr = !!x.place && (!city || cityNorm(x.place) !== cityNorm(city));
+  return { hasAdr, city, shown: hasAdr ? x.place : city, to: hasAdr ? x.place + (city && !cityNorm(x.place).includes(cityNorm(city)) ? ', ' + city : '') : city };
+}
+function carOpen() { if (CUR) closeSheet(); CAR.on = true; try { localStorage.setItem(CAR_KEY, '1'); } catch (e) {} carPaint(); $('#car').scrollTop = 0; }
+function carClose() { CAR.on = false; try { localStorage.removeItem(CAR_KEY); } catch (e) {} $('#car').hidden = true; document.body.classList.remove('caron'); }
+function carPaint() {
+  const box = $('#car'); if (!box || !CAR.on) return;
+  const all = carPeople(), col = carColors(all), cOf = (x) => CAR_COL[col[carKey(x)]] || CAR_COL[0];
+  const cnt = new Map(); all.forEach((x) => { const c = x.city || NOCITY; cnt.set(c, (cnt.get(c) || 0) + 1); });
+  const towns = [...cnt.keys()].filter((c) => c !== NOCITY).sort((a, b) => cnt.get(b) - cnt.get(a) || a.localeCompare(b, 'he')); if (cnt.has(NOCITY)) towns.push(NOCITY);
+  if (CAR.f != null && !cnt.has(CAR.f)) CAR.f = null;
+  const L = CAR.f == null ? all : all.filter((x) => (x.city || NOCITY) === CAR.f);
+  const h = L.find((x) => carKey(x) === CAR.head) || L[0], rest = L.filter((x) => x !== h);
+  const ini = (x) => esc((String(x.name || '').match(/[א-תA-Za-z0-9]/) || ['?'])[0]);
+  const chip = (v, t, n) => `<button type="button" data-carf="${esc(v)}" aria-pressed="${(CAR.f == null ? '' : CAR.f) === v}">${esc(t)} · ${n}</button>`;
+  let body;
+  if (!h) body = '<div class="cempty">לא דיברת עם אף אחד בשלושת ימי העבודה האחרונים.</div>';
+  else {
+    const d = carDest(h), w = waHref(h.phone), t = telHref(h.phone);
+    body = `<div class="chero" style="--c:${cOf(h)}"><div class="chh"><span class="cdisc">${ini(h)}</span><div class="cht"><div class="cnm">${esc(h.name)}</div>${d.shown ? `<div class="cad">${esc(d.shown)}</div>` : ''}</div></div>
+      ${d.hasAdr ? '' : `<div class="cwarn">${d.city ? 'אין כתובת. הניווט מגיע ליישוב בלבד.' : 'אין כתובת ואין יישוב. אי אפשר לנווט.'}</div>`}
+      <div class="csub">${esc(short(h.what, 70))}${h.what ? ' · ' : ''}דיברנו ${esc(ago(h.at))}</div>
+      ${d.to ? `<a class="cgo" href="${esc(navHref(d.to))}" target="_blank" rel="noopener">${bic('map')}${d.hasAdr ? 'ניווט לשם' : 'ניווט ליישוב'}</a>` : `<span class="cgo off">${bic('map')}אין לאן לנווט</span>`}
+      <div class="ctwo">${w ? `<a class="cwa" href="${w}" target="_blank" rel="noopener">${bic('wa')}וואטסאפ</a>` : ''}${t ? `<a class="ctel" href="${t}">${bic('call')}חיוג</a>` : ''}</div></div>`
+      + (rest.length ? '<div class="clbl">שאר הלקוחות. לחיצה על שם מעלה אותו למעלה</div>' + rest.map((x, i) => {
+        const dx = carDest(x), wx = waHref(x.phone), tx = telHref(x.phone);
+        return `<div class="krow" style="--c:${cOf(x)};--i:${Math.min(i, 8)}"><button type="button" class="ctx" data-carhead="${esc(carKey(x))}"><span class="cdisc">${ini(x)}</span><span class="kt"><span class="cnm">${esc(x.name)}</span><span class="csub">${esc(dx.shown || 'בלי יישוב')}${dx.hasAdr || !dx.city ? '' : ' (אין כתובת)'}${x.what ? ' · ' + esc(short(x.what, 50)) : ''}</span></span></button>${wx ? `<a class="crb w" href="${wx}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(x.name)}">${bic('wa')}</a>` : ''}${tx ? `<a class="crb c" href="${tx}" aria-label="להתקשר ל${esc(x.name)}">${bic('call')}</a>` : ''}</div>`;
+      }).join('') : '');
+  }
+  box.innerHTML = `<div class="cwrap"><div class="ctop"><h2>מצב רכב</h2><button type="button" class="cexit" data-carx>יציאה</button></div>
+    ${all.length ? `<div class="cchips">${chip('', 'כולם', all.length)}${towns.map((c) => chip(c, c === NOCITY ? 'בלי יישוב' : c, cnt.get(c))).join('')}</div>` : ''}${body}</div>`;
+  box.hidden = false; document.body.classList.add('caron');
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest && e.target.closest('[data-car],[data-carx],[data-carf],[data-carhead]'); if (!t) return;
+  if (t.dataset.car != null) return carOpen();
+  if (t.dataset.carx != null) return carClose();
+  if (t.dataset.carf != null) { CAR.f = t.dataset.carf === '' ? null : t.dataset.carf; CAR.head = null; }
+  else { CAR.head = t.dataset.carhead; }
+  carPaint(); $('#car').scrollTo({ top: 0, behavior: 'smooth' });
+});
+try { CAR.on = !!localStorage.getItem(CAR_KEY) && !FX; } catch (e) {}
+/* ---------- 22.11 (אור): הלוח מותקן כאפליקציה נפרדת ("לוח העסק") — כפתור התקנה בתפריט "עוד" כשהדפדפן מציע ---------- */
+let INSTALL = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); INSTALL = e; });
+addEventListener('appinstalled', () => { INSTALL = null; });
+document.addEventListener('click', (e) => { if (!e.target.closest || !e.target.closest('[data-install]') || !INSTALL) return; const p = INSTALL; INSTALL = null; closeSheet(); try { p.prompt(); } catch (er) {} });
+if (!FX && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 $('#qnew').addEventListener('click', () => openNew(null));
 boot();
 
