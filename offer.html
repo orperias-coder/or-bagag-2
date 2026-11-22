@@ -86,7 +86,7 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
 .paper td{padding:6px 3px;border-bottom:1px solid #eee6d8;vertical-align:top} .paper td.s{text-align:left;white-space:nowrap}
 .paper .pt{margin-top:10px;margin-right:auto;width:min(230px,100%);display:flex;flex-direction:column;gap:3px}
 .paper .pt div{display:flex;justify-content:space-between} .paper .pt .g{font-weight:700;font-size:.95rem;border-top:1.5px solid #2a2620;padding-top:4px}
-.paper .box{margin-top:10px;border:1px solid #e3dccd;border-radius:6px;padding:7px 9px} .paper .box.dash{border-style:dashed}
+.paper .box{margin-top:10px;border:1px solid #e3dccd;border-radius:6px;padding:7px 9px} .paper .box.dash{border-style:dashed} .paper .box.gt .gl{margin-top:2px} .paper .box,.paper .sig{break-inside:avoid;page-break-inside:avoid}
 .paper .sig{display:flex;gap:20px;margin-top:20px} .paper .sig div{flex:1;border-top:1px solid #2a2620;padding-top:4px;font-size:.72rem;color:#6d655a}
 .tbl-wrap{overflow-x:auto}
 
@@ -127,7 +127,7 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
 .it .t input,.it .d input{width:100%;border:1px solid transparent;background:transparent;border-radius:8px;padding:2px 6px;font:inherit;color:inherit}
 .it .t input:hover,.it .d input:hover,.it .t input:focus,.it .d input:focus{border-color:var(--line2);background:#fff}
 .it .t input{font-weight:600;font-family:var(--f)} .it .d input{font-size:.85rem;color:var(--muted)}
-.paper .logo img{height:46px;width:auto;display:block}
+.paper .logo img{height:72px;width:auto;display:block}
 .msgbox{width:100%;border:0;background:#e7f6dc;border-radius:14px 14px 4px 14px;padding:12px 14px;line-height:1.55;font:inherit;font-size:.92rem;resize:vertical}
 .gate{max-width:520px;margin:12vh auto;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -181,7 +181,7 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
         <div class="tr"><span>לפני מע"מ</span><b class="num" id="t-before"></b></div>
         <div class="tr"><span id="t-vat-l">מע"מ</span><b class="num" id="t-vat"></b></div>
         <div class="tr big"><span>לתשלום</span><span class="num" id="t-total"></span></div>
-        <div class="tr adv"><span>מקדמה 30% בחתימה</span><span class="num" id="t-adv"></span></div>
+        <div class="tr adv"><span id="t-adv-l">מקדמה 30% בחתימה</span><span class="num" id="t-adv"></span></div>
       </div>
       <div class="card">
         <label class="l" for="terms" style="margin-top:0">תנאי תשלום</label>

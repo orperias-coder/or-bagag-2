@@ -12,6 +12,10 @@ const PEOPLE = { 'or.perias@gmail.com': 'owner', 'zohariadar@gmail.com': 'owner'
 const BIZ_DEFAULT = { businessName: 'אור בגג', ownerName: 'אור פריאס', phone: '054-5725681', email: 'or.perias@gmail.com', taxId: '307951517' };
 const UNFORESEEN = 'במידה ויתגלו במהלך העבודה כשלים, נזקים או צרכים שלא נצפו ואינם כלולים בהצעה זו — יינתן עבורם תמחור נפרד בתיאום מראש עם הלקוח.';
 const TERMS_DEFAULT = '30% מקדמה במועד החתימה, 70% בסיום העבודה';
+// 22.11 (אור: "כמו באפליקציה המקורית"): תנאים כלליים בסוף ההצעה — אותו נוסח שבאפליקציה (app.js GENERAL_TERMS)
+const GENERAL_TERMS = ['המחירים כוללים אך ורק את הסעיפים המפורטים בהצעה זו. עבודה שאינה מופיעה כאן אינה כלולה במחיר.', 'לוח הזמנים כפוף לתנאי מזג האוויר ולזמינות חומרים, ויתואם מראש מול הלקוח.', 'ההצעה מחייבת את הצדדים רק לאחר אישור הלקוח, ובתוקף עד המועד הנקוב בראש המסמך.'];
+// אחוז המקדמה נקרא מתנאי התשלום ("40% מקדמה" / "מקדמה של 40%"); אם לא כתוב אחוז — 30, כמו עד היום
+function advPct(terms) { const t = String(terms == null ? TERMS_DEFAULT : terms), x = t.match(/(\d{1,3})\s*%\s*מקדמה/) || t.match(/מקדמה[^0-9%\n]{0,15}(\d{1,3})\s*%/); const n = x ? +x[1] : 30; return n > 0 && n <= 100 ? n : 30; }
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -73,7 +77,7 @@ const calc = (q) => {
   const items = (q.items || []).filter((i) => i.visible !== false), sum = items.reduce((a, i) => a + Number(i.total || 0), 0), d = q.discount;
   const disc = Math.min(sum, !d ? 0 : d.type === 'percent' ? sum * Math.min(100, Number(d.value || 0)) / 100 : Number(d.value || 0));
   const before = Math.max(0, sum - disc), vat = before * Number(q.vat_rate ?? 18) / 100;
-  return { sum, disc, before, vat, total: before + vat, adv: (before + vat) * 0.3 };
+  const ap = advPct(q.payment_terms); return { sum, disc, before, vat, total: before + vat, ap, adv: (before + vat) * ap / 100 };
 };
 const validUntil = (q) => { const d = new Date(q.sent_at || q.created_at || Date.now()); d.setDate(d.getDate() + Number(q.validity_days || 30)); return d; };
 const firstName = () => String((S.cust && S.cust.name) || '').trim().split(/\s+/)[0] || '';
@@ -205,7 +209,7 @@ function draw(newIdx) {
 function totals() {
   const q = S.Q, k = calc(q), d = q.discount;
   $('#t-sum').textContent = m(k.sum); $('#t-disc').textContent = k.disc ? '−' + m(k.disc) : ''; $('#t-before').textContent = m(k.before);
-  $('#t-vat-l').textContent = 'מע"מ ' + (q.vat_rate ?? 18) + '%'; $('#t-vat').textContent = m(k.vat); $('#t-total').textContent = m(k.total); $('#t-adv').textContent = m(k.adv);
+  $('#t-vat-l').textContent = 'מע"מ ' + (q.vat_rate ?? 18) + '%'; $('#t-vat').textContent = m(k.vat); $('#t-total').textContent = m(k.total); $('#t-adv').textContent = m(k.adv); { const al = $('#t-adv-l'); if (al) al.textContent = 'מקדמה ' + k.ap + '% בחתימה'; }
   $('#b-disc').textContent = d ? (d.type === 'percent' ? d.value + '%' : m(d.value)) + ' · לשנות' : 'הוסף';
   paper(k); bar();
 }
@@ -213,14 +217,15 @@ function paper(k) {
   const q = S.Q, c = S.cust || {}, b = S.biz, items = q.items.filter((i) => i.visible !== false), d = q.discount;
   $('#paper').innerHTML = `<div class="ph"><div class="logo"><img src="logo.png" alt="${esc(b.businessName)}"><small>${esc(b.ownerName)}</small></div><div style="text-align:left;font-size:.72rem;color:#6d655a">${esc(b.phone)}<br><span dir="ltr">${esc(b.email)}</span><br>ח.פ. ${esc(b.taxId)}</div></div>
   <div class="ttl"><b>הצעת מחיר${q.number ? ' #' + esc(q.number) : ''}</b><span>${dateHe(q.sent_at || q.created_at || Date.now())} · בתוקף עד ${dateHe(validUntil(q))}</span></div>
-  <div>לכבוד <b>${esc(c.name || '')}</b>${c.address ? ' · ' + esc(c.address) : ''}</div>
+  <div>לכבוד <b>${esc(c.name || '')}</b>${c.phone ? ' · <span dir="ltr">' + esc(fmtPhone(c.phone)) + '</span>' : ''}${c.address ? ' · ' + esc(c.address) : ''}</div>
   <div class="tbl-wrap"><table><thead><tr><th>#</th><th>תיאור</th><th>כמות</th><th>מחיר ליח'</th><th>סה"כ</th></tr></thead><tbody>
   ${items.map((i, n) => `<tr><td>${n + 1}</td><td><b>${esc(i.title)}</b>${i.description ? `<div style="color:#6d655a">${esc(i.description)}</div>` : ''}</td><td class="num">${esc(i.qty)} ${esc(i.unit || '')}</td><td class="num">${m(i.price_per_unit)}</td><td class="s num">${m(i.total)}</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="pt num">${k.disc ? `<div><span>סה"כ סעיפים</span><span>${m(k.sum)}</span></div><div><span>הנחה${d && d.type === 'percent' ? ' ' + d.value + '%' : ''}</span><span>−${m(k.disc)}</span></div>` : ''}<div><span>לפני מע"מ</span><span>${m(k.before)}</span></div><div><span>מע"מ ${q.vat_rate ?? 18}%</span><span>${m(k.vat)}</span></div><div class="g"><span>לתשלום</span><span>${m(k.total)}</span></div><div><span>מקדמה 30%</span><span>${m(k.adv)}</span></div></div>
+  <div class="pt num">${k.disc ? `<div><span>סה"כ סעיפים</span><span>${m(k.sum)}</span></div><div><span>הנחה${d && d.type === 'percent' ? ' ' + d.value + '%' : ''}</span><span>−${m(k.disc)}</span></div>` : ''}<div><span>לפני מע"מ</span><span>${m(k.before)}</span></div><div><span>מע"מ ${q.vat_rate ?? 18}%</span><span>${m(k.vat)}</span></div><div class="g"><span>לתשלום</span><span>${m(k.total)}</span></div><div><span>מקדמה ${k.ap}%</span><span>${m(k.adv)}</span></div></div>
   ${q.payment_terms ? `<div class="box"><b>תנאי תשלום</b><div>${esc(q.payment_terms)}</div></div>` : ''}
   ${q.notes && q.notes.trim() ? `<div class="box"><b>הערות</b><div style="white-space:pre-wrap">${esc(q.notes)}</div></div>` : ''}
   <div class="box dash"><b>עבודות בלתי-צפויות</b><div>${esc((S.tpl && S.tpl.unforeseenClause) || UNFORESEEN)}</div></div>
+  <div class="box gt"><b>תנאים כלליים</b>${GENERAL_TERMS.map((t, n) => `<div class="gl">${n + 1}. ${esc(t)}</div>`).join('')}</div>
   <div class="sig"><div>חתימת הלקוח · תאריך</div><div>חתימת הקבלן · תאריך</div></div>`;
 }
 
