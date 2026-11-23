@@ -2246,7 +2246,7 @@ $('#sheet').addEventListener('click', (e) => {
   if (b.dataset.inv === 'bank' && PAYCTX) return invFromBank(PAYCTX.r, PAYCTX.d);
   if (b.dataset.inv === 'pay' && CUR && CUR.pay) return invFromPay(CUR);
 });
-/* ====================== 22.11 (אור): מצב רכב — אחד קבוע למעלה + רשימה, צבע קבוע לכל לקוח ====================== */
+/* ====================== 22.11 (אור): מצב רכב — רשימה, צבע קבוע לכל לקוח. 23.11: בלי כרטיס קבוע למעלה; לחיצה על לקוח פותחת חלון מעל הרשימה ====================== */
 // מי שדיברנו איתו ב-3 ימי העבודה האחרונים (שיחה או וואטסאפ), גם בלי שום דבר ביומן. כפתורים גדולים: ניווט, וואטסאפ, חיוג.
 const CAR_DAYS = 3, CAR_KEY = 'ob2car', CAR_COL_KEY = 'ob2carcol', CAR_COL = ['#e5484d', '#3f9b3a', '#f08c00', '#1a9aa8', '#e0569b', '#d4a400'];
 const CAR = { on: false, f: null, head: null };
@@ -2270,8 +2270,9 @@ function carDest(x) {
   const city = x.city || '', hasAdr = !!x.place && (!city || cityNorm(x.place) !== cityNorm(city));
   return { hasAdr, city, shown: hasAdr ? x.place : city, to: hasAdr ? x.place + (city && !cityNorm(x.place).includes(cityNorm(city)) ? ', ' + city : '') : city };
 }
-function carOpen() { if (CUR) closeSheet(); CAR.on = true; try { localStorage.setItem(CAR_KEY, '1'); } catch (e) {} carPaint(); $('#car').scrollTop = 0; }
-function carClose() { CAR.on = false; try { localStorage.removeItem(CAR_KEY); } catch (e) {} $('#car').hidden = true; document.body.classList.remove('caron'); }
+function carOpen() { if (CUR) closeSheet(); CAR.on = true; CAR.head = null; try { localStorage.setItem(CAR_KEY, '1'); } catch (e) {} carPaint(); $('#car').scrollTop = 0; }
+function carClose() { CAR.on = false; CAR.head = null; try { localStorage.removeItem(CAR_KEY); } catch (e) {} $('#car').hidden = true; document.body.classList.remove('caron'); }
+const carIni = (x) => esc((String(x.name || '').match(/[א-תA-Za-z0-9]/) || ['?'])[0]);
 function carPaint() {
   const box = $('#car'); if (!box || !CAR.on) return;
   const all = carPeople(), col = carColors(all), cOf = (x) => CAR_COL[col[carKey(x)]] || CAR_COL[0];
@@ -2279,35 +2280,45 @@ function carPaint() {
   const towns = [...cnt.keys()].filter((c) => c !== NOCITY).sort((a, b) => cnt.get(b) - cnt.get(a) || a.localeCompare(b, 'he')); if (cnt.has(NOCITY)) towns.push(NOCITY);
   if (CAR.f != null && !cnt.has(CAR.f)) CAR.f = null;
   const L = CAR.f == null ? all : all.filter((x) => (x.city || NOCITY) === CAR.f);
-  const h = L.find((x) => carKey(x) === CAR.head) || L[0], rest = L.filter((x) => x !== h);
-  const ini = (x) => esc((String(x.name || '').match(/[א-תA-Za-z0-9]/) || ['?'])[0]);
   const chip = (v, t, n) => `<button type="button" data-carf="${esc(v)}" aria-pressed="${(CAR.f == null ? '' : CAR.f) === v}">${esc(t)} · ${n}</button>`;
-  let body;
-  if (!h) body = '<div class="cempty">לא דיברת עם אף אחד בשלושת ימי העבודה האחרונים.</div>';
-  else {
-    const d = carDest(h), w = waHref(h.phone), t = telHref(h.phone);
-    body = `<div class="chero" style="--c:${cOf(h)}"><div class="chh"><span class="cdisc">${ini(h)}</span><div class="cht"><div class="cnm">${esc(h.name)}</div>${d.shown ? `<div class="cad">${esc(d.shown)}</div>` : ''}</div></div>
+  const body = !L.length ? '<div class="cempty">לא דיברת עם אף אחד בשלושת ימי העבודה האחרונים.</div>' : L.map((x, i) => {
+    const dx = carDest(x), wx = waHref(x.phone), tx = telHref(x.phone);
+    return `<div class="krow" style="--c:${cOf(x)};--i:${Math.min(i, 8)}"><button type="button" class="ctx" data-carhead="${esc(carKey(x))}"><span class="cdisc">${carIni(x)}</span><span class="kt"><span class="cnm">${esc(x.name)}</span><span class="csub">${esc(dx.shown || 'בלי יישוב')}${dx.hasAdr || !dx.city ? '' : ' (אין כתובת)'}${x.what ? ' · ' + esc(short(x.what, 50)) : ''}</span></span></button>${wx ? `<a class="crb w" href="${wx}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(x.name)}">${bic('wa')}</a>` : ''}${tx ? `<a class="crb c" href="${tx}" aria-label="להתקשר ל${esc(x.name)}">${bic('call')}</a>` : ''}</div>`;
+  }).join('');
+  box.innerHTML = `<div class="cwrap"><div class="ctop"><button type="button" class="cback" data-carx><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>יציאה ממצב רכב</button><h2>מצב רכב</h2></div>
+    ${all.length ? `<div class="cchips">${chip('', 'כולם', all.length)}${towns.map((c) => chip(c, c === NOCITY ? 'בלי יישוב' : c, cnt.get(c))).join('')}</div>` : ''}${body}</div><div id="carpop" hidden></div>`;
+  box.hidden = false; document.body.classList.add('caron');
+  carPop(false);
+}
+// החלון של לקוח אחד מעל הרשימה. anim רק בפתיחה, כדי שרענון-רקע לא יקפיץ אותו שוב
+function carPop(anim) {
+  const p = $('#carpop'); if (!p) return;
+  const all = carPeople(), h = CAR.head == null ? null : all.find((x) => carKey(x) === CAR.head);
+  if (!h) { CAR.head = null; p.hidden = true; p.innerHTML = ''; return; }
+  const c = CAR_COL[carColors(all)[carKey(h)]] || CAR_COL[0], d = carDest(h), w = waHref(h.phone), t = telHref(h.phone);
+  p.className = anim ? 'anim' : '';
+  p.innerHTML = `<div class="chero" style="--c:${c}" role="dialog" aria-modal="true" aria-label="${esc(h.name)}"><button type="button" class="cpx" data-carpx aria-label="סגירה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div class="chh"><span class="cdisc">${carIni(h)}</span><div class="cht"><div class="cnm">${esc(h.name)}</div>${d.shown ? `<div class="cad">${esc(d.shown)}</div>` : ''}</div></div>
       ${d.hasAdr ? '' : `<div class="cwarn">${d.city ? 'אין כתובת. הניווט מגיע ליישוב בלבד.' : 'אין כתובת ואין יישוב. אי אפשר לנווט.'}</div>`}
       <div class="csub">${esc(short(h.what, 70))}${h.what ? ' · ' : ''}דיברנו ${esc(ago(h.at))}</div>
       ${d.to ? `<a class="cgo" href="${esc(navHref(d.to))}" target="_blank" rel="noopener">${bic('map')}${d.hasAdr ? 'ניווט לשם' : 'ניווט ליישוב'}</a>` : `<span class="cgo off">${bic('map')}אין לאן לנווט</span>`}
-      <div class="ctwo">${w ? `<a class="cwa" href="${w}" target="_blank" rel="noopener">${bic('wa')}וואטסאפ</a>` : ''}${t ? `<a class="ctel" href="${t}">${bic('call')}חיוג</a>` : ''}</div></div>`
-      + (rest.length ? '<div class="clbl">שאר הלקוחות. לחיצה על שם מעלה אותו למעלה</div>' + rest.map((x, i) => {
-        const dx = carDest(x), wx = waHref(x.phone), tx = telHref(x.phone);
-        return `<div class="krow" style="--c:${cOf(x)};--i:${Math.min(i, 8)}"><button type="button" class="ctx" data-carhead="${esc(carKey(x))}"><span class="cdisc">${ini(x)}</span><span class="kt"><span class="cnm">${esc(x.name)}</span><span class="csub">${esc(dx.shown || 'בלי יישוב')}${dx.hasAdr || !dx.city ? '' : ' (אין כתובת)'}${x.what ? ' · ' + esc(short(x.what, 50)) : ''}</span></span></button>${wx ? `<a class="crb w" href="${wx}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(x.name)}">${bic('wa')}</a>` : ''}${tx ? `<a class="crb c" href="${tx}" aria-label="להתקשר ל${esc(x.name)}">${bic('call')}</a>` : ''}</div>`;
-      }).join('') : '');
-  }
-  box.innerHTML = `<div class="cwrap"><div class="ctop"><h2>מצב רכב</h2><button type="button" class="cexit" data-carx>יציאה</button></div>
-    ${all.length ? `<div class="cchips">${chip('', 'כולם', all.length)}${towns.map((c) => chip(c, c === NOCITY ? 'בלי יישוב' : c, cnt.get(c))).join('')}</div>` : ''}${body}</div>`;
-  box.hidden = false; document.body.classList.add('caron');
+      <div class="ctwo">${w ? `<a class="cwa" href="${w}" target="_blank" rel="noopener">${bic('wa')}וואטסאפ</a>` : ''}${t ? `<a class="ctel" href="${t}">${bic('call')}חיוג</a>` : ''}</div></div>`;
+  p.hidden = false;
 }
 document.addEventListener('click', (e) => {
-  const t = e.target.closest && e.target.closest('[data-car],[data-carx],[data-carf],[data-carhead]'); if (!t) return;
+  if (!e.target.closest) return;
+  const pop = $('#carpop');
+  if (pop && !pop.hidden && pop.contains(e.target)) {   // חלון פתוח: לחיצה מחוץ לכרטיס או על האיקס חוזרת לרשימה
+    if (!e.target.closest('.chero') || e.target.closest('[data-carpx]')) { CAR.head = null; carPop(false); }
+    return;
+  }
+  const t = e.target.closest('[data-car],[data-carx],[data-carf],[data-carhead]'); if (!t) return;
   if (t.dataset.car != null) return carOpen();
   if (t.dataset.carx != null) return carClose();
-  if (t.dataset.carf != null) { CAR.f = t.dataset.carf === '' ? null : t.dataset.carf; CAR.head = null; }
-  else { CAR.head = t.dataset.carhead; }
-  carPaint(); $('#car').scrollTo({ top: 0, behavior: 'smooth' });
+  if (t.dataset.carf != null) { CAR.f = t.dataset.carf === '' ? null : t.dataset.carf; CAR.head = null; carPaint(); $('#car').scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  CAR.head = t.dataset.carhead; carPop(true);
 });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CAR.on && CAR.head != null) { CAR.head = null; carPop(false); } });
 try { CAR.on = !!localStorage.getItem(CAR_KEY) && !FX; } catch (e) {}
 /* ---------- 22.11 (אור): הלוח מותקן כאפליקציה נפרדת ("לוח העסק") — כפתור התקנה בתפריט "עוד" כשהדפדפן מציע ---------- */
 let INSTALL = null;

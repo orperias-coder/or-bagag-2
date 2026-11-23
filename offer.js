@@ -73,11 +73,40 @@ async function log(entity, id, action, diff) { if (FX) return; try { await sb.fr
 
 /* ---------- מצב ---------- */
 const S = { me: '', canSend: false, job: null, cust: null, quotes: [], prices: [], findings: [], biz: BIZ_DEFAULT, Q: null, saved: false, base: null, versioned: false, saving: null, dirtyT: null, opened: '' };
-const calc = (q) => {
-  const items = (q.items || []).filter((i) => i.visible !== false), sum = items.reduce((a, i) => a + Number(i.total || 0), 0), d = q.discount;
-  const disc = Math.min(sum, !d ? 0 : d.type === 'percent' ? sum * Math.min(100, Number(d.value || 0)) / 100 : Number(d.value || 0));
+// share = איזה חלק מהנחה בשקלים חל על הסעיפים האלה (שלבים שאושרו בחלקם); הנחה באחוזים חלה תמיד באותו אחוז
+const calcOf = (q, items, share) => {
+  const sum = items.reduce((a, i) => a + Number(i.total || 0), 0), d = q.discount;
+  const disc = Math.min(sum, !d ? 0 : d.type === 'percent' ? sum * Math.min(100, Number(d.value || 0)) / 100 : Number(d.value || 0) * (share == null ? 1 : share));
   const before = Math.max(0, sum - disc), vat = before * Number(q.vat_rate ?? 18) / 100;
   const ap = advPct(q.payment_terms); return { sum, disc, before, vat, total: before + vat, ap, adv: (before + vat) * ap / 100 };
+};
+/* 23.11 (אור: "אופציה א', אופציה ב'... או שלבים... תתי הצעות בתוך הצעה אחת"): חלוקה בתוך הצעה אחת, בלי שינוי בענן —
+   q.options.split = { mode: 'stages'|'options'|'plain', groups: [{id,name}], chosen: {groups:[id], total, at} }, וכל סעיף: item.group = id.
+   הצעה בלי split (או mode='plain') — בדיוק כמו קודם. שלבים: סכום לכל שלב + סה"כ לכל השלבים. אופציות: מחיר מלא לכל אופציה, בלי סה"כ. */
+const HEB = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'כ', 'ל'];
+const WORD = { stages: 'שלב', options: 'אופציה' };
+const defName = (mode, n) => WORD[mode] + ' ' + (HEB[n] ? HEB[n] + "'" : n + 1);
+const isDefName = (s) => /^(שלב|אופציה) ([א-ל]'|\d+)$/.test(String(s || '').trim());
+const vis = (q) => (q.items || []).filter((i) => i.visible !== false);
+const split = (q) => { const s = q && q.options && q.options.split; return s && (s.mode === 'stages' || s.mode === 'options') && Array.isArray(s.groups) && s.groups.length ? s : null; };
+const gidOf = (sp, i) => (sp.groups.some((g) => g.id === i.group) ? i.group : sp.groups[0].id);
+const gItems = (q, sp, id) => vis(q).filter((i) => gidOf(sp, i) === id);
+const nItems = (n) => (n === 1 ? 'סעיף אחד' : n + ' סעיפים');
+const gSum = (its) => its.reduce((a, i) => a + Number(i.total || 0), 0);
+// כל קבוצה עם הסעיפים והחשבון שלה. באופציות — כל אופציה מחושבת לבד (כולל הנחה ומע"מ)
+const groupCalcs = (q, sp) => sp.groups.map((g) => { const its = gItems(q, sp, g.id); return { g, its, k: calcOf(q, its) }; });
+// שלבים שאושרו: הנחה בשקלים מתחלקת לפי החלק של השלבים האלה מכל ההצעה
+const stagesCalc = (q, sp, ids) => { const its = vis(q).filter((i) => ids.includes(gidOf(sp, i))), all = gSum(vis(q)); return calcOf(q, its, all ? gSum(its) / all : 1); };
+const optRange = (q, sp) => { const t = groupCalcs(q, sp).filter((x) => x.its.length).map((x) => x.k.total); return t.length ? [Math.min(...t), Math.max(...t), t.length] : [0, 0, 0]; };
+const rangeTxt = (r) => (r[0] === r[1] ? m(r[0]) : 'מ-' + m(r[0]) + ' עד ' + m(r[1]));
+const calc = (q) => {
+  const sp = split(q);
+  if (sp && sp.mode === 'options') {   // הסכום "של ההצעה" (נשמר ב-total): האופציה שנבחרה, ועד שבוחרים — הזולה
+    const gc = groupCalcs(q, sp), ch = sp.chosen && sp.chosen.groups && gc.find((x) => x.g.id === sp.chosen.groups[0]);
+    if (ch) return ch.k; const full = gc.filter((x) => x.its.length).sort((a, b) => a.k.total - b.k.total);
+    return full.length ? full[0].k : calcOf(q, []);
+  }
+  return calcOf(q, vis(q));
 };
 const validUntil = (q) => { const d = new Date(q.sent_at || q.created_at || Date.now()); d.setDate(d.getDate() + Number(q.validity_days || 30)); return d; };
 const firstName = () => String((S.cust && S.cust.name) || '').trim().split(/\s+/)[0] || '';
@@ -111,7 +140,7 @@ function blank() {
   return { id: uuid(), job_id: S.job.id, number: null, status: 'draft', version: 1, items: [], addon: false, discount: null, vat_rate: Number(t.vatRate ?? 18), validity_days: Number(t.validityDays || 30),
     payment_terms: t.paymentTerms || TERMS_DEFAULT, notes: t.standardNotes || '', options: { unforeseen: true, signatures: true }, total_before_vat: 0, total: 0, created_at: new Date().toISOString() };
 }
-function use(q, saved) { S.Q = JSON.parse(JSON.stringify(q)); S.Q.items = S.Q.items || []; S.saved = saved; S.base = saved ? JSON.parse(JSON.stringify(q)) : null; S.versioned = false; S.opened = ''; }
+function use(q, saved) { S.Q = JSON.parse(JSON.stringify(q)); S.Q.items = S.Q.items || []; S.saved = saved; S.base = saved ? JSON.parse(JSON.stringify(q)) : null; S.versioned = false; S.opened = ''; S.cur = null; }
 
 /* ---------- שמירה: טיוטה נשמרת תוך כדי; אחרי "נשלחה" — הגרסה הקודמת נשמרת פעם אחת לפני השינוי הראשון ---------- */
 function changed() { if (S.stale) return setSaved(STALE_S, true); setSaved('שומר…'); clearTimeout(S.dirtyT); S.dirtyT = setTimeout(save, 700); }
@@ -183,23 +212,46 @@ function head() {
   bar();
 }
 function bar() {
-  const q = S.Q, k = calc(q), hasItems = (q.items || []).length > 0;
-  $('#bar-total').textContent = m(k.total) + ' כולל מע"מ';
+  const q = S.Q, k = calc(q), hasItems = (q.items || []).length > 0, sp = split(q), ch = sp && q.status === 'accepted' && sp.chosen && sp.chosen.groups;
+  $('#bar-total').textContent = (sp && sp.mode === 'options' && !ch ? rangeTxt(optRange(q, sp)) : ch ? m(sp.chosen.total) : m(k.total)) + ' כולל מע"מ';
   $('#bar-sub').textContent = q.status === 'draft' ? (S.opened ? 'נפתח ' + S.opened + ' · השלב לא השתנה עד שתלחץ "✓ נשלחה"' : 'טיוטה · עוד לא נשלחה')
-    : q.status === 'sent' ? 'נשלחה ' + (q.sent_at ? dateHe(q.sent_at) : '') + ' · מחכים לתשובה' : q.status === 'accepted' ? 'הלקוח אישר' : 'נדחתה';
+    : q.status === 'sent' ? 'נשלחה ' + (q.sent_at ? dateHe(q.sent_at) : '') + ' · מחכים לתשובה' : q.status === 'accepted' ? 'הלקוח אישר' + (ch ? ' · ' + chosenNames(sp) : '') : 'נדחתה';
   $('#b-send').hidden = !S.canSend || !hasItems || q.status === 'accepted';
   $('#b-send').textContent = q.status === 'draft' ? 'לשלוח ללקוח' : 'לשלוח שוב';
   $('#b-did').hidden = q.status !== 'draft' || !hasItems;
   $('#b-ok').hidden = q.status !== 'sent';
 }
-function draw(newIdx) {
-  const q = S.Q;
-  $('#items').innerHTML = q.items.map((i, n) => `<div class="it${n === newIdx ? ' new' : ''}" data-row="${n}"><span class="n">${n + 1}</span><div style="min-width:0">
+const chosenNames = (sp) => sp.groups.filter((g) => sp.chosen.groups.includes(g.id)).map((g) => g.name).join(', ');
+const curG = (sp) => (sp.groups.some((g) => g.id === S.cur) ? S.cur : sp.groups[sp.groups.length - 1].id);
+const URG = [['גבוהה', 'דחוף'], ['בינונית', 'בינוני'], ['נמוכה', 'יכול לחכות']];   // הערכים כמו באפליקציה הראשית (i.urgency)
+const urgTag = (u) => u ? `<span class="urg u-${URG.findIndex((x) => x[0] === u)}">דחיפות ${esc(u)}</span>` : '';
+// שורת סעיף בעורך. n = המקום ברשימה המלאה (כך הקלדה/הסרה עובדות כמו קודם), shown = המספר שמוצג
+const itemRow = (i, n, shown, newIdx, sp) => `<div class="it${n === newIdx ? ' new' : ''}" data-row="${n}"><span class="n">${shown}</span><div style="min-width:0">
     <div class="t"><input data-n="${n}" data-k="title" value="${esc(i.title)}" aria-label="שם הסעיף" placeholder="שם הסעיף"></div>
     <div class="d"><input data-n="${n}" data-k="description" value="${esc(i.description || '')}" aria-label="פירוט" placeholder="פירוט (לא חובה)"></div>
-    <div class="q"><input data-n="${n}" data-k="qty" inputmode="decimal" value="${esc(i.qty)}" aria-label="כמות"> <input data-n="${n}" data-k="unit" value="${esc(i.unit || '')}" aria-label="יחידה" style="width:64px"> × <input data-n="${n}" data-k="price_per_unit" inputmode="decimal" value="${esc(i.price_per_unit)}" aria-label="מחיר ליחידה"> ₪</div></div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="tot num">${m(i.total)}</span><button class="x" type="button" data-del="${n}">להסיר</button></div></div>`).join('')
+    <div class="q"><input data-n="${n}" data-k="qty" inputmode="decimal" value="${esc(i.qty)}" aria-label="כמות"> <input data-n="${n}" data-k="unit" value="${esc(i.unit || '')}" aria-label="יחידה" style="width:64px"> × <input data-n="${n}" data-k="price_per_unit" inputmode="decimal" value="${esc(i.price_per_unit)}" aria-label="מחיר ליחידה"> ₪</div>
+    <div class="ug" role="group" aria-label="דחיפות">${URG.map(([v, l], k) => `<button type="button" class="u-${k}${i.urgency === v ? ' on' : ''}" data-urg="${v}" data-un="${n}" aria-pressed="${i.urgency === v}">${l}</button>`).join('')}</div>${sp ? `
+    <label class="mv">שייך ל <select data-n="${n}" data-k="group" aria-label="להעביר ל">${sp.groups.map((g) => `<option value="${esc(g.id)}"${gidOf(sp, i) === g.id ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>` : ''}</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="tot num">${m(i.total)}</span><button class="x" type="button" data-del="${n}">להסיר</button></div></div>`;
+function draw(newIdx) {
+  const q = S.Q, sp = split(q), mode = sp ? sp.mode : 'plain';
+  document.querySelectorAll('#mode [data-mode]').forEach((b) => { const on = b.dataset.mode === mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  $('#mode-n').textContent = mode === 'stages' ? 'כל שלב עם מחיר משלו, ולמטה סה"כ לכל השלבים.' : mode === 'options' ? 'כל אופציה עם מחיר מלא משלה. הלקוח בוחר אחת, אין סה"כ.' : '';
+  $('#b-grp').hidden = !sp; $('#addto').hidden = !sp;
+  if (!sp) $('#items').innerHTML = q.items.map((i, n) => itemRow(i, n, n + 1, newIdx, null)).join('')
     || '<p class="muted" style="margin:4px 0">עוד אין סעיפים. מוסיפים מהמחירון או סעיף חופשי.</p>';
+  else {
+    const cur = curG(sp), ch = q.status === 'accepted' && sp.chosen && sp.chosen.groups;
+    $('#items').innerHTML = sp.groups.map((g) => {
+      const rows = q.items.map((i, n) => [i, n]).filter(([i]) => gidOf(sp, i) === g.id);
+      return `<div class="grp${g.id === cur ? ' cur' : ''}" data-g="${esc(g.id)}">
+      <div class="gh"><input class="gname" data-gname="${esc(g.id)}" value="${esc(g.name)}" aria-label="שם ה${WORD[mode]}">${ch && ch.includes(g.id) ? '<span class="tag sent">✓ אושר</span>' : ''}<span class="gsum num" data-gsum="${esc(g.id)}"></span></div>
+      <div class="gsub"><span data-gsub="${esc(g.id)}"></span><span class="gact">${g.id === cur ? '<span class="tag v">סעיף חדש נכנס לכאן</span>' : `<button class="chip" type="button" data-gcur="${esc(g.id)}">להוסיף לכאן</button>`}${sp.groups.length > 1 ? `<button class="x" type="button" data-gdel="${esc(g.id)}">למחוק ${WORD[mode]}</button>` : ''}</span></div>
+      ${rows.map(([i, n], r) => itemRow(i, n, r + 1, newIdx, sp)).join('') || `<p class="muted" style="margin:2px 6px;font-size:.85rem">ריק. לוחצים "להוסיף לכאן" ואז מוסיפים מהמחירון או סעיף חופשי.</p>`}</div>`;
+    }).join('');
+    $('#b-grp').textContent = '+ ' + WORD[mode]; const cg = sp.groups.find((g) => g.id === cur);
+    $('#addto').innerHTML = 'סעיף חדש ייכנס ל: <b>' + esc(cg ? cg.name : '') + '</b>';
+  }
   $('#cnt').textContent = q.items.length ? q.items.length + ' סעיפים' : '';
   const left = S.findings.filter((f) => !q.items.some((i) => i.finding_id === f.id));
   $('#b-find').hidden = !left.length; $('#b-find').textContent = '+ מהביקור (' + left.length + (left.length === 1 ? ' ממצא)' : ' ממצאים)');
@@ -211,17 +263,45 @@ function totals() {
   $('#t-sum').textContent = m(k.sum); $('#t-disc').textContent = k.disc ? '−' + m(k.disc) : ''; $('#t-before').textContent = m(k.before);
   $('#t-vat-l').textContent = 'מע"מ ' + (q.vat_rate ?? 18) + '%'; $('#t-vat').textContent = m(k.vat); $('#t-total').textContent = m(k.total); $('#t-adv').textContent = m(k.adv); { const al = $('#t-adv-l'); if (al) al.textContent = 'מקדמה ' + k.ap + '% בחתימה'; }
   $('#b-disc').textContent = d ? (d.type === 'percent' ? d.value + '%' : m(d.value)) + ' · לשנות' : 'הוסף';
+  const sp = split(q), opt = sp && sp.mode === 'options';
+  document.querySelectorAll('.tot-std').forEach((e) => { e.hidden = !!opt; });
+  $('#t-opts').hidden = !opt;
+  if (opt) $('#t-opts').innerHTML = groupCalcs(q, sp).map(({ g, its, k: gk }) => `<div class="tr"><span>${esc(g.name)}${its.length ? '' : ' <span class="muted">(ריקה)</span>'}</span><b class="num">${m(gk.total)} כולל מע"מ</b></div>`).join('')
+    + '<div class="tr adv"><span>הלקוח בוחר אופציה אחת, ולכן אין סה"כ</span></div>';
+  if (sp) gsums();
   paper(k); bar();
 }
+// הסכום שליד כל שלב/אופציה בעורך (מתעדכן תוך כדי הקלדה)
+function gsums() {
+  const q = S.Q, sp = split(q); if (!sp) return;
+  groupCalcs(q, sp).forEach(({ g, its, k }) => {
+    const s = document.querySelector(`[data-gsum="${CSS.escape(g.id)}"]`), u = document.querySelector(`[data-gsub="${CSS.escape(g.id)}"]`); if (!s || !u) return;
+    if (sp.mode === 'options') { s.textContent = m(k.total); u.textContent = nItems(its.length) + ' · לפני מע"מ ' + m(k.before) + ' · כולל מע"מ ' + m(k.total); }
+    else { s.textContent = m(k.sum); u.textContent = nItems(its.length) + ' · לפני מע"מ'; }
+  });
+}
+const ITEM_TABLE = (items, sub) => `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>תיאור</th><th>כמות</th><th>מחיר ליח'</th><th>סה"כ</th></tr></thead><tbody>
+  ${items.map((i, n) => `<tr><td>${n + 1}</td><td><b>${esc(i.title)}</b>${urgTag(i.urgency)}${i.description ? `<div style="color:#6d655a">${esc(i.description)}</div>` : ''}</td><td class="num">${esc(i.qty)} ${esc(i.unit || '')}</td><td class="num">${m(i.price_per_unit)}</td><td class="s num">${m(i.total)}</td></tr>`).join('')}${sub ? `<tr class="sub"><td></td><td colspan="3">${sub[0]}</td><td class="s num">${sub[1]}</td></tr>` : ''}
+  </tbody></table></div>`;
+// lines = שורות לפני ההנחה (בשלבים: שורה לכל שלב במקום "סה"כ סעיפים")
+const PRICE_BLOCK = (q, k, g, lines) => { const d = q.discount; return `<div class="pt num">${lines || ''}${k.disc ? `${lines ? '' : `<div><span>סה"כ סעיפים</span><span>${m(k.sum)}</span></div>`}<div><span>הנחה${d && d.type === 'percent' ? ' ' + d.value + '%' : ''}</span><span>−${m(k.disc)}</span></div>` : ''}<div><span>לפני מע"מ</span><span>${m(k.before)}</span></div><div><span>מע"מ ${q.vat_rate ?? 18}%</span><span>${m(k.vat)}</span></div><div class="g"><span>${g || 'לתשלום'}</span><span>${m(k.total)}</span></div><div><span>מקדמה ${k.ap}%</span><span>${m(k.adv)}</span></div></div>`; };
+function paperBody(q, k) {
+  const sp = split(q);
+  if (!sp) return ITEM_TABLE(vis(q)) + '\n  ' + PRICE_BLOCK(q, k);
+  const gs = groupCalcs(q, sp).filter((x) => x.its.length);
+  if (sp.mode === 'stages') {
+    return gs.map(({ g, its }) => `<div class="gph"><b>${esc(g.name)}</b><span class="num">${m(gSum(its))}</span></div>` + ITEM_TABLE(its, ['סה"כ ' + esc(g.name) + ', לפני מע"מ', m(gSum(its))])).join('')
+      + PRICE_BLOCK(q, k, 'סה"כ לכל השלבים', gs.length > 1 ? gs.map(({ g, its }) => `<div><span>${esc(g.name)}</span><span>${m(gSum(its))}</span></div>`).join('') : '');
+  }
+  return `<div class="pick">יש לבחור אחת מהאופציות. לכל אופציה מחיר מלא משלה.</div>`
+    + gs.map(({ g, its, k: gk }) => `<div class="opt"><div class="gph"><b>${esc(g.name)}</b><span class="num">${m(gk.total)} כולל מע"מ</span></div>${ITEM_TABLE(its)}${PRICE_BLOCK(q, gk, 'לתשלום ב' + esc(g.name))}</div>`).join('');
+}
 function paper(k) {
-  const q = S.Q, c = S.cust || {}, b = S.biz, items = q.items.filter((i) => i.visible !== false), d = q.discount;
+  const q = S.Q, c = S.cust || {}, b = S.biz;
   $('#paper').innerHTML = `<div class="ph"><div class="logo"><img src="logo.png" alt="${esc(b.businessName)}"><small>${esc(b.ownerName)}</small></div><div style="text-align:left;font-size:.72rem;color:#6d655a">${esc(b.phone)}<br><span dir="ltr">${esc(b.email)}</span><br>ח.פ. ${esc(b.taxId)}</div></div>
   <div class="ttl"><b>הצעת מחיר${q.number ? ' #' + esc(q.number) : ''}</b><span>${dateHe(q.sent_at || q.created_at || Date.now())} · בתוקף עד ${dateHe(validUntil(q))}</span></div>
   <div>לכבוד <b>${esc(c.name || '')}</b>${c.phone ? ' · <span dir="ltr">' + esc(fmtPhone(c.phone)) + '</span>' : ''}${c.address ? ' · ' + esc(c.address) : ''}</div>
-  <div class="tbl-wrap"><table><thead><tr><th>#</th><th>תיאור</th><th>כמות</th><th>מחיר ליח'</th><th>סה"כ</th></tr></thead><tbody>
-  ${items.map((i, n) => `<tr><td>${n + 1}</td><td><b>${esc(i.title)}</b>${i.description ? `<div style="color:#6d655a">${esc(i.description)}</div>` : ''}</td><td class="num">${esc(i.qty)} ${esc(i.unit || '')}</td><td class="num">${m(i.price_per_unit)}</td><td class="s num">${m(i.total)}</td></tr>`).join('')}
-  </tbody></table></div>
-  <div class="pt num">${k.disc ? `<div><span>סה"כ סעיפים</span><span>${m(k.sum)}</span></div><div><span>הנחה${d && d.type === 'percent' ? ' ' + d.value + '%' : ''}</span><span>−${m(k.disc)}</span></div>` : ''}<div><span>לפני מע"מ</span><span>${m(k.before)}</span></div><div><span>מע"מ ${q.vat_rate ?? 18}%</span><span>${m(k.vat)}</span></div><div class="g"><span>לתשלום</span><span>${m(k.total)}</span></div><div><span>מקדמה ${k.ap}%</span><span>${m(k.adv)}</span></div></div>
+  ${paperBody(q, k)}
   ${q.payment_terms ? `<div class="box"><b>תנאי תשלום</b><div>${esc(q.payment_terms)}</div></div>` : ''}
   ${q.notes && q.notes.trim() ? `<div class="box"><b>הערות</b><div style="white-space:pre-wrap">${esc(q.notes)}</div></div>` : ''}
   <div class="box dash"><b>עבודות בלתי-צפויות</b><div>${esc((S.tpl && S.tpl.unforeseenClause) || UNFORESEEN)}</div></div>
@@ -231,18 +311,61 @@ function paper(k) {
 
 /* ---------- עריכה ---------- */
 const itemOf = (o) => ({ id: uuid(), title: o.title || '', description: o.description || '', qty: Number(o.qty) || 1, unit: o.unit || '', price_per_unit: Number(o.price_per_unit) || 0, total: Math.round((Number(o.qty) || 1) * (Number(o.price_per_unit) || 0)), urgency: '', visible: true, ...(o.extra || {}) });
-function add(it) { S.Q.items.push(it); draw(S.Q.items.length - 1); changed(); }
+// בשלבים/אופציות: סעיף חדש נכנס לקבוצה שמסומנת "סעיף חדש נכנס לכאן" (ברירת מחדל: האחרונה)
+const intoGroup = (it) => { const sp = split(S.Q); if (sp) it.group = curG(sp); return it; };
+function add(it) { S.Q.items.push(intoGroup(it)); draw(S.Q.items.length - 1); changed(); }
 $('#items').addEventListener('input', (e) => {
-  const t = e.target, n = t.dataset.n; if (n == null) return; const it = S.Q.items[+n]; if (!it) return;
+  const t = e.target;
+  if (t.dataset.gname != null) {   // שינוי שם של שלב/אופציה
+    const sp = split(S.Q), g = sp && sp.groups.find((x) => x.id === t.dataset.gname); if (!g) return;
+    g.name = t.value; document.querySelectorAll(`#items option[value="${CSS.escape(g.id)}"]`).forEach((o) => { o.textContent = t.value; });
+    const a = $('#addto b'); if (a && curG(sp) === g.id) a.textContent = t.value;
+    totals(); changed(); return;
+  }
+  const n = t.dataset.n; if (n == null) return; const it = S.Q.items[+n]; if (!it) return;
+  if (t.dataset.k === 'group') { it.group = t.value; draw(); changed(); toast('הסעיף עבר ל' + (t.selectedOptions[0] ? t.selectedOptions[0].textContent : '')); return; }
   if (t.dataset.k === 'qty' || t.dataset.k === 'price_per_unit') { const v = num(t.value); if (!(v >= 0) || v > 1e9) return; it[t.dataset.k] = v; it.total = Math.round(it.qty * it.price_per_unit); t.closest('.it').querySelector('.tot').textContent = m(it.total); totals(); }
   else { it[t.dataset.k] = t.value; paper(calc(S.Q)); }
   changed();
 });
 $('#items').addEventListener('click', (e) => {
+  const u = e.target.closest('[data-urg]');
+  if (u) { const it = S.Q.items[+u.dataset.un]; if (!it) return; it.urgency = it.urgency === u.dataset.urg ? '' : u.dataset.urg;
+    u.parentNode.querySelectorAll('[data-urg]').forEach((b) => { const on = b.dataset.urg === it.urgency; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    paper(calc(S.Q)); changed(); return; }
+  const c = e.target.closest('[data-gcur]'); if (c) { S.cur = c.dataset.gcur; draw(); return; }
+  const g = e.target.closest('[data-gdel]'); if (g) return delGroup(g.dataset.gdel);
   const d = e.target.closest('[data-del]'); if (!d) return; const [x] = S.Q.items.splice(+d.dataset.del, 1); draw(); changed(); toast('"' + (x.title || 'סעיף') + '" הוסר');
 });
+// מעבר רגיל / שלבים / אופציות. חזרה ל"רגיל" לא מוחקת את החלוקה — היא רק לא מוצגת, וחוזרת אם בוחרים שוב
+function setMode(mode) {
+  const q = S.Q, old = q.options && q.options.split, now = split(q) ? split(q).mode : 'plain'; if (mode === now) return;
+  q.options = { ...(q.options || {}) };
+  if (mode === 'plain') q.options.split = { ...old, mode: 'plain' };
+  else {
+    let groups = old && Array.isArray(old.groups) && old.groups.length ? old.groups.map((g, n) => ({ ...g, name: isDefName(g.name) ? defName(mode, n) : g.name })) : null;
+    if (!groups) groups = [0, 1].map((n) => ({ id: uuid(), name: defName(mode, n) }));
+    q.options.split = { ...(old || {}), mode, groups };
+    const sp = q.options.split; q.items.forEach((i) => { i.group = gidOf(sp, i); });   // סעיפים קיימים נכנסים לראשונה
+    S.cur = groups[0].id;
+  }
+  draw(); changed();
+}
+$('#mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
+$('#b-grp').onclick = () => {
+  const sp = split(S.Q); if (!sp) return; const g = { id: uuid(), name: defName(sp.mode, sp.groups.length) };
+  sp.groups.push(g); S.cur = g.id; draw(); changed();
+  const i = document.querySelector(`[data-gname="${CSS.escape(g.id)}"]`); if (i) i.scrollIntoView({ block: 'center', behavior: 'smooth' });
+};
+function delGroup(id) {
+  const sp = split(S.Q); if (!sp || sp.groups.length < 2) return; const ix = sp.groups.findIndex((g) => g.id === id); if (ix < 0) return;
+  const g = sp.groups[ix], to = sp.groups[ix ? ix - 1 : 1], its = S.Q.items.filter((i) => gidOf(sp, i) === id);
+  if (its.length && !confirm(`למחוק את "${g.name}"?\n${its.length === 1 ? 'הסעיף שבו יעבור' : its.length + ' הסעיפים שבו יעברו'} ל"${to.name}" (לא נמחקים).`)) return;
+  its.forEach((i) => { i.group = to.id; }); sp.groups.splice(ix, 1); if (S.cur === id) S.cur = to.id;
+  draw(); changed(); toast('"' + g.name + '" נמחק' + (its.length ? '. הסעיפים עברו ל"' + to.name + '"' : ''));
+}
 $('#b-free').onclick = () => { add(itemOf({ title: '', unit: "יח'", qty: 1, price_per_unit: 0 })); const r = document.querySelector(`[data-row="${S.Q.items.length - 1}"] [data-k="title"]`); if (r) r.focus(); };
-$('#b-find').onclick = () => { const left = S.findings.filter((f) => !S.Q.items.some((i) => i.finding_id === f.id)); left.forEach((f) => S.Q.items.push(itemOf({ title: f.title, description: f.description, qty: f.qty, unit: f.unit, price_per_unit: f.price_per_unit, extra: { finding_id: f.id } }))); draw(S.Q.items.length - 1); changed(); toast(left.length + ' ממצאים מהביקור נוספו'); };
+$('#b-find').onclick = () => { const left = S.findings.filter((f) => !S.Q.items.some((i) => i.finding_id === f.id)); left.forEach((f) => S.Q.items.push(intoGroup(itemOf({ title: f.title, description: f.description, qty: f.qty, unit: f.unit, price_per_unit: f.price_per_unit, extra: { finding_id: f.id } })))); draw(S.Q.items.length - 1); changed(); toast(left.length + ' ממצאים מהביקור נוספו'); };
 $('#b-disc').onclick = () => {
   const d = S.Q.discount, cur = d ? (d.type === 'percent' ? d.value + '%' : String(d.value)) : '';
   const v = prompt('הנחה: באחוזים (למשל 5%) או בשקלים (למשל 500). ריק = בלי הנחה', cur); if (v == null) return;
@@ -276,7 +399,13 @@ $('#veil').onclick = close; document.querySelectorAll('[data-close]').forEach((b
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
 /* ---------- שליחה (אור בלבד). פותחים וואטסאפ/מייל אצלו; השלב לא משתנה ---------- */
-function shareText() { const k = calc(S.Q); return `היי ${firstName()}, מצורפת הצעת מחיר${S.Q.number ? ' ' + S.Q.number : ''} על סך ${m(k.total)} כולל מע"מ.\nבתוקף עד ${dateHe(validUntil(S.Q))}. אשמח לענות על כל שאלה.\nאור - אור בגג`; }
+function shareText() {
+  const q = S.Q, k = calc(q), sp = split(q), no = q.number ? ' ' + q.number : '';
+  let what = `מצורפת הצעת מחיר${no} על סך ${m(k.total)} כולל מע"מ.`;
+  if (sp && sp.mode === 'options') { const r = optRange(q, sp); if (r[2] > 1) what = `מצורפת הצעת מחיר${no} עם ${r[2]} אופציות לבחירה, ${rangeTxt(r)} כולל מע"מ. בוחרים אחת מהן.`; }
+  else if (sp) { const n = groupCalcs(q, sp).filter((x) => x.its.length).length; if (n > 1) what = `מצורפת הצעת מחיר${no} ב-${n} שלבים, על סך הכל ${m(k.total)} כולל מע"מ (המחיר של כל שלב מפורט בהצעה).`; }
+  return `היי ${firstName()}, ${what}\nבתוקף עד ${dateHe(validUntil(q))}. אשמח לענות על כל שאלה.\nאור - אור בגג`;
+}
 $('#b-send').onclick = async () => {
   if (!S.canSend) return; if (!S.Q.items.length) return toast('אין סעיפים בהצעה');
   if (!S.Q.number) { const n = await api.nextNumber(); if (n) { S.Q.number = n; await save(); } } else await save();
@@ -369,16 +498,51 @@ $('#b-did').onclick = async (e) => {
 $('#b-ok').onclick = async (e) => {
   const b = e.currentTarget; if (b.disabled || S.Q.status !== 'sent') return;
   if (S.stale) return toast(STALE);
+  const sp = split(S.Q); if (sp) return okSheet(sp);   // שלבים/אופציות: בוחרים בחלונית מה אושר
   const k = calc(S.Q); if (!confirm(`הלקוח אישר את ההצעה על ${m(k.total)}?\nהכרטיס יעבור ל"לביצוע".`)) return;
+  approve(k.total);
+};
+// total = הסכום שסוכם (כולל מע"מ); patch = מה נרשם על ההצעה עצמה יחד עם "אושרה" (מה הלקוח בחר)
+async function approve(total, patch) {
+  const b = $('#b-ok'); if (b.disabled || S.Q.status !== 'sent') return;
   b.disabled = true;
   try {
     const v0 = S.versioned; S.versioned = true;   // הסימון עצמו אינו "שינוי" שדורש גרסה
     const saved = await save(); S.versioned = v0; if (!saved) return;
     const now = new Date().toISOString();
-    if (!(await setJob({ stage: 'approved', stage_changed_at: now, approved_at: now, price_agreed: Math.round(k.total * 100) / 100 }, ['lead', 'visit', 'quote', 'sent']))) return;
-    if (!(await setStatus({ status: 'accepted' }, 'sent'))) return;
-    toast('מעולה. הכרטיס עבר ל"לביצוע"'); draw();
+    if (!(await setJob({ stage: 'approved', stage_changed_at: now, approved_at: now, price_agreed: Math.round(total * 100) / 100 }, ['lead', 'visit', 'quote', 'sent']))) return;
+    if (!(await setStatus({ status: 'accepted', ...(patch || {}) }, 'sent'))) return;
+    close(); toast('מעולה. הכרטיס עבר ל"לביצוע"'); draw();
   } finally { b.disabled = false; }
+}
+// חלונית "מה הלקוח אישר": אופציות — בוחרים אחת; שלבים — מסמנים אילו שלבים (ברירת מחדל: כולם)
+function okSheet(sp) {
+  const q = S.Q, opt = sp.mode === 'options', gs = groupCalcs(q, sp).filter((x) => x.its.length);
+  if (!gs.length) return toast('אין סעיפים בהצעה');
+  $('#ok-t').textContent = opt ? 'איזו אופציה הלקוח בחר?' : 'אילו שלבים הלקוח אישר?';
+  $('#ok-list').innerHTML = gs.map(({ g, its }) => `<label class="okr"><input type="${opt ? 'radio' : 'checkbox'}" name="okp" value="${esc(g.id)}"${opt ? '' : ' checked'}><span><b>${esc(g.name)}</b><small>${nItems(its.length)}</small></span><b class="num" data-okt="${esc(g.id)}"></b></label>`).join('');
+  okPaint(); openSh('#sh-ok');
+}
+const okPick = () => [...document.querySelectorAll('#ok-list input:checked')].map((i) => i.value);
+function okVal() {
+  const q = S.Q, sp = split(q), ids = okPick(); if (!sp || !ids.length) return null;
+  const k = sp.mode === 'options' ? calcOf(q, gItems(q, sp, ids[0])) : stagesCalc(q, sp, ids);
+  return { sp, ids, k };
+}
+function okPaint() {
+  const q = S.Q, sp = split(q); if (!sp) return;
+  groupCalcs(q, sp).forEach(({ g, its, k }) => { const e = document.querySelector(`[data-okt="${CSS.escape(g.id)}"]`); if (e) e.textContent = sp.mode === 'options' ? m(k.total) + ' כולל מע"מ' : m(gSum(its)) + ' לפני מע"מ'; });
+  const v = okVal(), go = $('#ok-go');
+  go.disabled = !v; go.textContent = !v ? (sp.mode === 'options' ? 'בוחרים אופציה' : 'מסמנים לפחות שלב אחד') : 'הלקוח אישר · ' + m(v.k.total) + ' כולל מע"מ';
+  $('#ok-n').textContent = v ? 'הכרטיס יעבור ל"לביצוע", והסכום שסוכם יהיה ' + m(v.k.total) + ' כולל מע"מ.' : 'הכרטיס יעבור ל"לביצוע" עם הסכום של מה שנבחר.';
+}
+$('#ok-list').addEventListener('change', okPaint);
+$('#ok-go').onclick = () => {
+  const v = okVal(); if (!v) return; const q = S.Q, total = Math.round(v.k.total * 100) / 100;
+  const chosen = { groups: v.ids, names: v.sp.groups.filter((g) => v.ids.includes(g.id)).map((g) => g.name), total, at: new Date().toISOString() };
+  const patch = { options: { ...q.options, split: { ...v.sp, chosen } } };
+  if (v.sp.mode === 'options') { patch.total = total; patch.total_before_vat = Math.round(v.k.before * 100) / 100; }   // הצעת אופציות: הסכום של ההצעה = מה שנבחר
+  approve(total, patch);
 };
 
 /* ---------- פרטי לקוח (תחילת ניהול לקוחות) ---------- */

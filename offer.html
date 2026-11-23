@@ -137,6 +137,41 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
 .offline{position:fixed;top:0;left:0;right:0;z-index:60;background:var(--accent);color:#fff;text-align:center;font-size:.86rem;font-weight:600;padding:6px 14px}
 .saved.bad{color:var(--accent)} .saved.bad::before{background:var(--accent)}
 .qpick{display:flex;flex-wrap:wrap;gap:6px}
+/* 23.11: שלבים / אופציות בתוך הצעה אחת */
+.modes{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:10px}
+.seg{display:inline-flex;background:var(--tray);border-radius:12px;padding:3px;gap:2px}
+.seg button{font:500 .88rem var(--f);border:0;background:transparent;border-radius:9px;padding:6px 14px;cursor:pointer;color:var(--muted);min-height:36px;transition:background .2s,color .2s,box-shadow .2s}
+.seg button.on{background:#fff;color:var(--lav-deep);box-shadow:var(--puff);font-weight:600}
+.seg button:focus-visible{outline:3px solid var(--lav-mid);outline-offset:1px}
+.modes .note{flex:1;min-width:180px}
+.grp{border:1.5px solid var(--line);border-radius:18px;padding:10px;display:flex;flex-direction:column;gap:8px;transition:border-color .2s,background .2s}
+.grp.cur{border-color:var(--lav-mid);background:#fcfbff}
+.grp .gh{display:flex;align-items:center;gap:8px}
+.grp .gname{flex:1;min-width:0;font:600 1.02rem var(--f);border:1px solid transparent;background:transparent;border-radius:8px;padding:4px 6px;color:var(--ink)}
+.grp .gname:hover,.grp .gname:focus{border-color:var(--line2);background:#fff}
+.grp .gsum{font:700 1.05rem var(--f);white-space:nowrap}
+.grp .gsub{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);padding-inline:6px}
+.grp .gact{display:flex;gap:6px;align-items:center}
+.grp .gact .x{font-size:.78rem;color:var(--muted);background:none;border:0;cursor:pointer;padding:4px}
+.it .ug{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.it .ug button{font:inherit;font-size:.8rem;font-weight:600;min-height:34px;padding:2px 12px;border-radius:999px;border:1px solid var(--line2);background:#fff;color:var(--muted);cursor:pointer}
+.it .ug button.on.u-0{background:#c0392b;border-color:#c0392b;color:#fff}
+.it .ug button.on.u-1{background:#d68910;border-color:#d68910;color:#fff}
+.it .ug button.on.u-2{background:#5d8a3a;border-color:#5d8a3a;color:#fff}
+.urg{display:inline-block;margin-inline-start:6px;font-size:.75em;font-weight:700;padding:1px 7px;border-radius:999px;vertical-align:middle;white-space:nowrap}
+.urg.u-0{background:#fbe3e0;color:#a8321f}.urg.u-1{background:#fcefd6;color:#8a5a0c}.urg.u-2{background:#e6f0dc;color:#41662a}
+.it .mv{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.8rem;color:var(--muted)}
+.it .mv select{font:inherit;color:var(--ink);border:1px solid var(--line2);border-radius:9px;padding:2px 6px;min-height:32px;background:#fff;max-width:100%}
+.addto{font-size:.84rem;color:var(--muted);margin-top:10px}
+.paper .gph{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:14px;padding:5px 8px;background:#f3eee4;border-radius:4px;break-after:avoid;page-break-after:avoid}
+.paper tr.sub td{font-weight:600;border-bottom:0;padding-top:7px}
+.paper .pick{margin-top:12px;padding:7px 9px;border:1.5px solid #2a2620;border-radius:6px;font-weight:600}
+.paper .opt{margin-top:6px;padding-bottom:10px;border-bottom:1px dashed #cfc7b8}
+.oklist{display:flex;flex-direction:column;gap:8px}
+.okr{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:var(--tray);cursor:pointer;transition:background .2s}
+.okr:has(input:checked){background:var(--lav-soft)}
+.okr input{width:20px;height:20px;accent-color:var(--lav);flex:none}
+.okr span{flex:1;display:flex;flex-direction:column} .okr small{color:var(--muted)}
 @media print{
   @page{size:A4;margin:12mm}
   body{background:#fff;padding:0}
@@ -168,20 +203,24 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
     <div class="ed-col">
       <div class="card">
         <div class="sec-h"><h3>מה בהצעה</h3><span class="muted num" id="cnt"></span></div>
+        <div class="modes"><div class="seg" id="mode" role="group" aria-label="סוג ההצעה"><button type="button" data-mode="plain">רגיל</button><button type="button" data-mode="stages">שלבים</button><button type="button" data-mode="options">אופציות</button></div><span class="note" id="mode-n"></span></div>
         <div class="items" id="items"></div>
+        <div class="addto" id="addto" hidden></div>
         <div class="adds">
           <button class="btn pri" type="button" id="b-cat">+ מהמחירון</button>
           <button class="btn" type="button" id="b-free">+ סעיף חופשי</button>
           <button class="btn" type="button" id="b-find" hidden></button>
+          <button class="btn" type="button" id="b-grp" hidden>+ שלב</button>
         </div>
       </div>
       <div class="card totals">
-        <div class="tr"><span>סה"כ סעיפים</span><b class="num" id="t-sum"></b></div>
+        <div class="tr tot-std"><span>סה"כ סעיפים</span><b class="num" id="t-sum"></b></div>
         <div class="tr"><span>הנחה <button class="chip" type="button" id="b-disc">הוסף</button></span><b class="num" id="t-disc"></b></div>
-        <div class="tr"><span>לפני מע"מ</span><b class="num" id="t-before"></b></div>
-        <div class="tr"><span id="t-vat-l">מע"מ</span><b class="num" id="t-vat"></b></div>
-        <div class="tr big"><span>לתשלום</span><span class="num" id="t-total"></span></div>
-        <div class="tr adv"><span id="t-adv-l">מקדמה 30% בחתימה</span><span class="num" id="t-adv"></span></div>
+        <div class="tr tot-std"><span>לפני מע"מ</span><b class="num" id="t-before"></b></div>
+        <div class="tr tot-std"><span id="t-vat-l">מע"מ</span><b class="num" id="t-vat"></b></div>
+        <div class="tr big tot-std"><span>לתשלום</span><span class="num" id="t-total"></span></div>
+        <div class="tr adv tot-std"><span id="t-adv-l">מקדמה 30% בחתימה</span><span class="num" id="t-adv"></span></div>
+        <div class="totals" id="t-opts" hidden></div>
       </div>
       <div class="card">
         <label class="l" for="terms" style="margin-top:0">תנאי תשלום</label>
@@ -223,6 +262,12 @@ textarea,input.txt{width:100%;border:1px solid var(--line2);border-radius:12px;p
     <button class="btn" type="button" id="b-mail" style="min-height:44px;flex:1">פתח מייל</button>
   </div>
   <p class="note" style="margin:0">"שתף" פותח את חלון השיתוף של הטלפון עם ה-PDF כבר מצורף: בוחרים וואטסאפ ואת הלקוח. ההודעה מועתקת, ואם וואטסאפ לא הכניס אותה, מדביקים. השלב בלוח לא משתנה לבד: כשההודעה יצאה, לוחצים "✓ נשלחה".</p>
+</div>
+<div class="sheet" id="sh-ok" aria-label="הלקוח אישר">
+  <div class="sec-h"><h3 id="ok-t">מה הלקוח אישר?</h3><button class="btn ghost sm" type="button" data-close>סגור</button></div>
+  <div class="oklist" id="ok-list"></div>
+  <p class="note" id="ok-n" style="margin:0"></p>
+  <button class="btn pri" type="button" id="ok-go" style="min-height:50px;font-size:1rem">הלקוח אישר</button>
 </div>
 <div class="sheet" id="sh-edit" aria-label="פרטי לקוח">
   <div class="sec-h"><h3>פרטי לקוח</h3><button class="btn ghost sm" type="button" data-close>סגור</button></div>

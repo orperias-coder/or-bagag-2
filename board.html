@@ -596,6 +596,23 @@ a.geo:hover{color:var(--accent);text-decoration-style:solid;text-decoration-colo
 .paper .pln.sm{color:var(--muted);font-size:.84rem}.paper .pln.tot{font-weight:700;border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
 .chatw,.path,.mvl,.paper{flex:none}
 
+/* 23.11 (אור): כפתורי הפתיח בטלפון — שורה אחת של אייקון גדול עם כיתוב קטן מתחת, במקום שלושה כפתורים בטור */
+.cta .ic{display:contents}
+@media (max-width:900px){
+  .hero>div:first-child{display:contents}
+  .hero .date,.hero h1,.hero p{grid-column:1}
+  .hero .date{align-self:end}.hero p{align-self:start}
+  .hero .art{grid-column:2;grid-row:1/4;align-self:center}
+  .hero .ctas{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:6px}
+  .hero .cta{flex-direction:column;justify-content:flex-start;gap:7px;padding:12px 6px 10px;border-radius:20px;font-size:.88rem;font-weight:600;line-height:1.2;text-align:center}
+  .hero .cta .ic{display:grid;place-items:center;width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,.2)}
+  .hero .cta.alt{color:var(--ink)}
+  .hero .cta.t-mv .ic{background:#e2f3f4;color:#2f8f98}
+  .hero .cta.t-car .ic{background:var(--accent-soft);color:var(--accent)}
+  .hero .cta .ic svg{width:32px;height:32px;stroke-width:2}
+  .hero .cta.t-car .ic svg{animation:csway 5s ease-in-out infinite}
+}
+@keyframes csway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}
 /* ---------- מצב רכב (22.11): מסך מלא, גדול ומינימלי, בשפת הלוח ---------- */
 body.caron{overflow:hidden}
 #car{position:fixed;inset:0;z-index:28;overflow-y:auto;overscroll-behavior:contain;background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 70%)}
@@ -603,18 +620,28 @@ body.caron{overflow:hidden}
 #car a{text-decoration:none}
 #car a,#car button{transition:transform .25s var(--spring);cursor:pointer}
 #car a:active,#car button:active{transform:scale(.95)}
-#car .bic{width:28px;height:28px;flex:none;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.ctop{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.ctop h2{font-size:28px;font-weight:600;letter-spacing:-.01em;margin:0}
-.cexit{border:0;font-size:18px;font-weight:600;background:#fff;color:var(--lav-deep);border-radius:999px;padding:0 22px;min-height:54px;box-shadow:var(--puff)}
+#car .bic{width:26px;height:26px;flex:none;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.ctop{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:calc(-12px - env(safe-area-inset-top,0px));padding:calc(10px + env(safe-area-inset-top,0px)) 0 10px;background:linear-gradient(var(--bg) 78%,transparent)}
+.ctop h2{font-size:20px;font-weight:600;color:var(--muted);margin:0}
+.cback{border:0;display:flex;align-items:center;gap:10px;min-height:56px;padding:0 20px 0 22px;border-radius:999px;background:var(--lav-deep);color:#fff;font-size:18px;font-weight:600;box-shadow:0 10px 22px -12px rgba(70,50,140,.8)}
+.cback svg{width:26px;height:26px;flex:none;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
 .cchips{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 12px;margin-bottom:4px;scrollbar-width:none}
 .cchips::-webkit-scrollbar{display:none}
-.cchips button{flex:none;border:0;min-height:58px;padding:0 20px;border-radius:999px;background:#fff;font-size:20px;font-weight:600;white-space:nowrap;box-shadow:var(--puff)}
+.cchips button{flex:none;border:0;min-height:50px;padding:0 18px;border-radius:999px;background:#fff;font-size:18px;font-weight:600;white-space:nowrap;box-shadow:var(--puff)}
 .cchips button[aria-pressed="true"]{background:var(--lav-deep);color:#fff}
 .clbl{font-size:16px;font-weight:600;color:var(--muted);margin:0 6px 8px}
 .cdisc{display:grid;place-items:center;border-radius:50%;background:var(--c);color:#fff;font-weight:800;flex:none;text-shadow:0 1px 2px rgba(0,0,0,.25)}
-.chero{position:sticky;top:calc(8px + env(safe-area-inset-top,0px));z-index:3;background:color-mix(in srgb,var(--c) 16%,#fff);border-radius:24px;padding:16px;margin-bottom:22px;box-shadow:inset 0 14px 0 var(--c),0 1px 2px rgba(60,40,110,.06),0 18px 36px -14px rgba(70,50,140,.4)}
-.chh{display:flex;align-items:center;gap:14px;padding-top:12px}
+/* 23.11 (אור): בלי כרטיס קבוע למעלה. לחיצה על לקוח פותחת חלון מעל הרשימה; לחיצה מחוץ לחלון סוגרת */
+#carpop{position:fixed;inset:0;z-index:5;box-sizing:border-box;display:grid;place-items:center;padding:20px 14px;background:rgba(43,37,64,.55)}
+#carpop[hidden]{display:none}
+#carpop.anim{animation:cfade .25s ease backwards}
+#carpop.anim .chero{animation:cpopin .4s var(--spring) backwards}
+@keyframes cfade{from{opacity:0}}
+@keyframes cpopin{from{opacity:0;transform:translateY(24px) scale(.9)}}
+.chero{position:relative;box-sizing:border-box;width:100%;max-width:520px;max-height:calc(100dvh - 40px);overflow-y:auto;overscroll-behavior:contain;background:color-mix(in srgb,var(--c) 14%,#fff);border-radius:28px;padding:18px 16px 16px;box-shadow:inset 0 14px 0 var(--c),0 30px 60px -20px rgba(30,20,70,.6)}
+.cpx{position:absolute;top:22px;left:12px;width:48px;height:48px;border-radius:50%;border:0;background:#fff;display:grid;place-items:center;box-shadow:0 2px 6px rgba(70,50,140,.2)}
+.cpx svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round}
+.chh{display:flex;align-items:center;gap:14px;padding:12px 0 0;padding-inline-end:56px}
 .cht{min-width:0}
 .chero .cdisc{width:72px;height:72px;font-size:36px}
 .chero .cnm{font-size:34px;font-weight:800;line-height:1.1;overflow-wrap:anywhere}
@@ -627,13 +654,13 @@ body.caron{overflow:hidden}
 .ctwo{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:10px;margin-top:10px}
 .ctwo a{min-height:68px;border-radius:20px;color:#fff;font-size:21px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px}
 .cwa{background:var(--wa)}.ctel{background:#2463c9}
-.krow{display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--c) 20%,#fff);border-radius:24px;padding:12px 14px;margin-bottom:12px;min-height:92px;border-inline-start:16px solid var(--c);box-shadow:var(--puff);animation:rise .5s var(--spring) backwards;animation-delay:calc(var(--i)*45ms)}
-.krow .ctx{flex:1;min-width:0;border:0;background:none;text-align:right;padding:4px 0;display:flex;align-items:center;gap:12px}
-.krow .cdisc{width:56px;height:56px;font-size:28px}
+.krow{display:flex;align-items:center;gap:8px;background:color-mix(in srgb,var(--c) 18%,#fff);border-radius:20px;padding:8px 12px;margin-bottom:10px;min-height:74px;border-inline-start:12px solid var(--c);box-shadow:var(--puff);animation:rise .5s var(--spring) backwards;animation-delay:calc(var(--i)*45ms)}
+.krow .ctx{flex:1;min-width:0;border:0;background:none;text-align:right;padding:4px 0;display:flex;align-items:center;gap:10px}
+.krow .cdisc{width:46px;height:46px;font-size:23px}
 .krow .kt{min-width:0}
-.krow .cnm{font-size:25px;font-weight:700;display:block;line-height:1.15;overflow-wrap:anywhere}
-.krow .csub{font-size:18px;color:#4c4660;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.crb{width:60px;height:60px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none;box-shadow:0 2px 6px rgba(70,50,140,.16)}
+.krow .cnm{font-size:21px;font-weight:700;display:block;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.krow .csub{font-size:15px;color:#4c4660;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.crb{width:48px;height:48px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none;box-shadow:0 2px 6px rgba(70,50,140,.16)}
 .crb.w{color:var(--wa)}.crb.c{color:#2463c9}
 .cempty{background:#fff;border-radius:24px;padding:28px 20px;font-size:22px;text-align:center;box-shadow:var(--puff)}
 @media (prefers-reduced-motion:reduce){#car *{animation:none!important;transition:none!important}}
@@ -666,9 +693,9 @@ body.caron{overflow:hidden}
         <span class="date" id="date"></span>
         <h1 id="greet">שלום</h1>
         <p id="brief">טוען…</p>
-        <div class="ctas"><button class="cta" type="button" id="cta"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg><span>להתחיל מהדחוף</span></button>
-          <button class="cta alt" type="button" data-moves><svg viewBox="0 0 24 24"><path d="M4 7h11M4 12h7M4 17h9"/><path d="M17 14l3 3-3 3M20 17h-6"/></svg><span>מה זז היום</span></button>
-          <button class="cta alt" type="button" data-car><svg viewBox="0 0 24 24"><path d="M4 16v-3l2-5h12l2 5v3"/><path d="M3 16h18v2H3z"/><circle cx="7.500" cy="18" r="1.500"/><circle cx="16.500" cy="18" r="1.500"/></svg><span>מצב רכב</span></button>
+        <div class="ctas"><button class="cta" type="button" id="cta"><i class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></i><span>להתחיל מהדחוף</span></button>
+          <button class="cta alt t-mv" type="button" data-moves><i class="ic"><svg viewBox="0 0 24 24"><path d="M4 7h11M4 12h7M4 17h9"/><path d="M17 14l3 3-3 3M20 17h-6"/></svg></i><span>מה זז היום</span></button>
+          <button class="cta alt t-car" type="button" data-car><i class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4"/><path d="M3.3 10.5c3-1.300 5.600-1.300 6.600.3M20.700 10.500c-3-1.300-5.600-1.300-6.600.3M12 14.400V21"/></svg></i><span>מצב רכב</span></button>
           <button class="cta soft" type="button" data-morning>סידור הבוקר</button></div>
       </div>
       <div class="art" aria-hidden="true">
